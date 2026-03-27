@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: verinest-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: verinest
+      POSTGRES_PASSWORD: verinest
+      POSTGRES_DB: verinest
+    ports:
+      - "5432:5432"
+    volumes:
+      - verinest-postgres-data:/var/lib/postgresql/data
+  redis:
+    image: redis:7-alpine
+    container_name: verinest-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+volumes:
+  verinest-postgres-data:
