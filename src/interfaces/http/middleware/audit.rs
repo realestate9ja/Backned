@@ -108,7 +108,10 @@ fn role_name(user: &User) -> String {
 fn action_name(method: &str, matched_path: &str) -> String {
     match (method, matched_path) {
         ("GET", "/users/{id}") => "user.view".to_string(),
+        ("GET", "/dashboard") => "dashboard.view".to_string(),
         ("GET", "/agents") => "agent.list".to_string(),
+        ("PATCH", "/agents/me/notification-settings") => "agent.notification_settings.update".to_string(),
+        ("GET", "/agents/me/post-alerts") => "agent.post_alerts.list".to_string(),
         ("POST", "/properties") => "property.create".to_string(),
         ("GET", "/properties") => "property.list".to_string(),
         ("GET", "/properties/{id}") => "property.view".to_string(),
@@ -122,7 +125,9 @@ fn action_name(method: &str, matched_path: &str) -> String {
 fn resource_type(matched_path: &str) -> Option<String> {
     match matched_path {
         "/users/{id}" => Some("user".to_string()),
+        "/dashboard" => Some("dashboard".to_string()),
         "/agents" => Some("agent".to_string()),
+        "/agents/me/notification-settings" | "/agents/me/post-alerts" => Some("agent".to_string()),
         "/properties" | "/properties/{id}" => Some("property".to_string()),
         "/posts" | "/posts/{id}/respond" => Some("post".to_string()),
         _ => None,

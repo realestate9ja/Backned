@@ -1,6 +1,9 @@
 use crate::{
     application::services::UserService,
-    domain::users::{AgentProfile, UserPublicView},
+    domain::{
+        notifications::AgentPostNotificationItem,
+        users::{AgentNotificationSettingsView, AgentProfile, DashboardResponse, UpdateAgentNotificationSettingsInput, User, UserPublicView},
+    },
     interfaces::http::errors::AppError,
     utils::pagination::Pagination,
 };
@@ -23,5 +26,20 @@ impl UserUseCases {
     pub async fn list_agents(&self, pagination: Pagination) -> Result<Vec<AgentProfile>, AppError> {
         self.service.list_agents(pagination).await
     }
-}
 
+    pub async fn update_agent_notification_settings(
+        &self,
+        actor: &User,
+        input: UpdateAgentNotificationSettingsInput,
+    ) -> Result<AgentNotificationSettingsView, AppError> {
+        self.service.update_agent_notification_settings(actor, input).await
+    }
+
+    pub async fn list_agent_post_alerts(&self, actor: &User) -> Result<Vec<AgentPostNotificationItem>, AppError> {
+        self.service.list_agent_post_alerts(actor).await
+    }
+
+    pub async fn get_dashboard(&self, actor: &User) -> Result<DashboardResponse, AppError> {
+        self.service.get_dashboard(actor).await
+    }
+}

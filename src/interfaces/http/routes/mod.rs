@@ -5,7 +5,7 @@ use crate::interfaces::http::{
 };
 use axum::{
     middleware,
-    routing::{get, post},
+    routing::{get, patch, post},
     Router,
 };
 use tower_http::trace::TraceLayer;
@@ -15,8 +15,14 @@ pub fn create_router(state: AppState) -> Router {
         .route("/health", get(health::health))
         .route("/auth/register", post(auth::register))
         .route("/auth/login", post(auth::login))
+        .route("/dashboard", get(users::get_dashboard))
         .route("/users/{id}", get(users::get_user))
         .route("/agents", get(users::list_agents))
+        .route(
+            "/agents/me/notification-settings",
+            patch(users::update_agent_notification_settings),
+        )
+        .route("/agents/me/post-alerts", get(users::list_agent_post_alerts))
         .route("/properties", post(properties::create_property).get(properties::list_properties))
         .route("/properties/{id}", get(properties::get_property))
         .route("/posts", post(posts::create_post).get(posts::list_posts))

@@ -1,5 +1,10 @@
 use crate::{
-    interfaces::http::{errors::AppError, state::AppState},
+    domain::users::UpdateAgentNotificationSettingsInput,
+    interfaces::http::{
+        errors::AppError,
+        middleware::auth::AuthUser,
+        state::AppState,
+    },
     utils::pagination::PaginationParams,
 };
 use axum::{extract::{Path, Query, State}, Json};
@@ -22,3 +27,30 @@ pub async fn list_agents(
     Ok(Json(agents))
 }
 
+pub async fn update_agent_notification_settings(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Json(payload): Json<UpdateAgentNotificationSettingsInput>,
+) -> Result<Json<crate::domain::users::AgentNotificationSettingsView>, AppError> {
+    let settings = state
+        .user_use_cases
+        .update_agent_notification_settings(&user, payload)
+        .await?;
+    Ok(Json(settings))
+}
+
+pub async fn list_agent_post_alerts(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<Vec<crate::domain::notifications::AgentPostNotificationItem>>, AppError> {
+    let alerts = state.user_use_cases.list_agent_post_alerts(&user).await?;
+    Ok(Json(alerts))
+}
+
+pub async fn get_dashboard(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<crate::domain::users::DashboardResponse>, AppError> {
+    let dashboard = state.user_use_cases.get_dashboard(&user).await?;
+    Ok(Json(dashboard))
+}

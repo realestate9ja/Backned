@@ -22,6 +22,7 @@ pub struct CreatePropertyInput {
     pub images: Vec<String>,
     pub contact_name: String,
     pub contact_phone: String,
+    pub is_service_apartment: bool,
     pub agent_id: Option<Uuid>,
 }
 
@@ -48,6 +49,7 @@ pub struct Property {
     pub images: Vec<String>,
     pub contact_name: String,
     pub contact_phone: String,
+    pub is_service_apartment: bool,
     pub status: PropertyStatus,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -61,6 +63,7 @@ pub struct PropertyListItem {
     pub location: String,
     pub description: String,
     pub images: Vec<String>,
+    pub is_service_apartment: bool,
     pub owner_id: Uuid,
     pub agent_id: Option<Uuid>,
     pub owner_name: String,
@@ -76,6 +79,7 @@ pub struct PropertyDetail {
     pub location: String,
     pub description: String,
     pub images: Vec<String>,
+    pub is_service_apartment: bool,
     pub owner_id: Uuid,
     pub agent_id: Option<Uuid>,
     pub owner_name: String,

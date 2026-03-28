@@ -168,6 +168,8 @@ Success `200`:
     "full_name": "Agent One",
     "email": "agent@example.com",
     "bio": "Licensed agent",
+    "operating_city": "Lagos",
+    "operating_state": "Lagos",
     "created_at": "2026-03-27T12:43:36.857242Z"
   }
 ]
@@ -200,6 +202,7 @@ Request body:
   ],
   "contact_name": "Landlord One",
   "contact_phone": "+2348010000002",
+  "is_service_apartment": true,
   "agent_id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b"
 }
 ```
@@ -223,6 +226,7 @@ Success `201`:
   "images": [
     "https://img.example/3.jpg"
   ],
+  "is_service_apartment": true,
   "owner_id": "8766fabf-af8a-4c8e-80d4-79641a08f3e8",
   "agent_id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b",
   "owner_name": "Landlord One",
@@ -267,6 +271,7 @@ Success `200`:
     "images": [
       "https://img.example/3.jpg"
     ],
+    "is_service_apartment": true,
     "owner_id": "8766fabf-af8a-4c8e-80d4-79641a08f3e8",
     "agent_id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b",
     "owner_name": "Landlord One",
@@ -302,6 +307,7 @@ Restricted response `200`:
   "images": [
     "https://img.example/3.jpg"
   ],
+  "is_service_apartment": true,
   "owner_id": "8766fabf-af8a-4c8e-80d4-79641a08f3e8",
   "agent_id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b",
   "owner_name": "Landlord One",
@@ -326,6 +332,7 @@ Privileged response `200`:
   "images": [
     "https://img.example/3.jpg"
   ],
+  "is_service_apartment": true,
   "owner_id": "8766fabf-af8a-4c8e-80d4-79641a08f3e8",
   "agent_id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b",
   "owner_name": "Landlord One",
@@ -358,6 +365,8 @@ Request body:
 {
   "budget": 3000000,
   "location": "Lekki",
+  "city": "Lagos",
+  "state": "Lagos",
   "description": "Looking for a 2 bedroom apartment near Admiralty Way"
 }
 ```
@@ -398,6 +407,8 @@ Success `200`:
     "author_role": "buyer",
     "budget": 3000000,
     "location": "Lekki",
+    "city": "Lagos",
+    "state": "Lagos",
     "description": "Looking for a 2 bedroom apartment near Admiralty Way",
     "response_count": 0,
     "created_at": "2026-03-27T12:43:39.129864Z"
@@ -436,6 +447,150 @@ Success `201`:
   "responder_id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b",
   "message": "I have two matching options in Lekki Phase 1.",
   "created_at": "2026-03-27T12:43:39.174098Z"
+}
+```
+
+## 11. Update Agent Notification Settings
+
+`PATCH /agents/me/notification-settings`
+
+Protected:
+
+- `agent`
+
+Request body:
+
+```json
+{
+  "notifications_enabled": true,
+  "operating_city": "Lagos",
+  "operating_state": "Lagos"
+}
+```
+
+Rules:
+
+- if `notifications_enabled` is `true`, both `operating_city` and `operating_state` are required
+- matching is done against new post `city` or `state`
+
+Success `200`:
+
+```json
+{
+  "notifications_enabled": true,
+  "operating_city": "Lagos",
+  "operating_state": "Lagos"
+}
+```
+
+## 12. Agent Post Alerts
+
+`GET /agents/me/post-alerts`
+
+Protected:
+
+- `agent`
+
+Success `200`:
+
+```json
+[
+  {
+    "notification_id": "uuid",
+    "post_id": "uuid",
+    "author_id": "uuid",
+    "author_name": "Buyer One",
+    "author_role": "buyer",
+    "budget": 3000000,
+    "location": "Lekki",
+    "city": "Lagos",
+    "state": "Lagos",
+    "description": "Looking for a 2 bedroom apartment near Admiralty Way",
+    "matched_city": "Lagos",
+    "matched_state": "Lagos",
+    "is_read": false,
+    "created_at": "2026-03-28T08:00:00Z"
+  }
+]
+```
+
+## 13. Role Dashboard
+
+`GET /dashboard`
+
+Protected:
+
+- `buyer`
+- `agent`
+- `landlord`
+
+Buyer success `200`:
+
+```json
+{
+  "role": "buyer",
+  "profile": {
+    "id": "uuid",
+    "full_name": "Buyer One",
+    "email": "buyer@example.com",
+    "role": "buyer",
+    "bio": "Buyer",
+    "created_at": "2026-03-28T08:00:00Z"
+  },
+  "buyer": {
+    "my_posts_count": 2,
+    "recent_posts": []
+  },
+  "agent": null,
+  "landlord": null
+}
+```
+
+Agent success `200`:
+
+```json
+{
+  "role": "agent",
+  "profile": {
+    "id": "uuid",
+    "full_name": "Agent One",
+    "email": "agent@example.com",
+    "role": "agent",
+    "bio": "Licensed agent",
+    "created_at": "2026-03-28T08:00:00Z"
+  },
+  "buyer": null,
+  "agent": {
+    "managed_properties_count": 5,
+    "service_apartments_count": 2,
+    "unread_post_alerts_count": 3,
+    "recent_properties": [],
+    "recent_post_alerts": []
+  },
+  "landlord": null
+}
+```
+
+Landlord success `200`:
+
+```json
+{
+  "role": "landlord",
+  "profile": {
+    "id": "uuid",
+    "full_name": "Landlord One",
+    "email": "landlord@example.com",
+    "role": "landlord",
+    "bio": "Owner",
+    "created_at": "2026-03-28T08:00:00Z"
+  },
+  "buyer": null,
+  "agent": null,
+  "landlord": {
+    "owned_properties_count": 4,
+    "assigned_agents_count": 2,
+    "recent_properties": []
+  }
 }
 ```
 
@@ -482,6 +637,7 @@ Possible errors:
   "location": "string",
   "description": "string",
   "images": ["string"],
+  "is_service_apartment": true,
   "owner_id": "uuid",
   "agent_id": "uuid | null",
   "owner_name": "string",
@@ -500,6 +656,7 @@ Possible errors:
   "location": "string",
   "description": "string",
   "images": ["string"],
+  "is_service_apartment": true,
   "owner_id": "uuid",
   "agent_id": "uuid | null",
   "owner_name": "string",
@@ -522,6 +679,8 @@ Possible errors:
   "author_role": "buyer | agent | landlord",
   "budget": 0,
   "location": "string",
+  "city": "string",
+  "state": "string",
   "description": "string",
   "response_count": 0,
   "created_at": "ISO datetime"

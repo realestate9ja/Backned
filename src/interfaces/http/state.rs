@@ -5,8 +5,8 @@ use crate::{
     },
     config::Settings,
     domain::{
-        audit::AuditLogRepository, posts::PostRepository, properties::PropertyRepository,
-        responses::ResponseRepository, users::UserRepository,
+        audit::AuditLogRepository, notifications::NotificationRepository, posts::PostRepository,
+        properties::PropertyRepository, responses::ResponseRepository, users::UserRepository,
     },
     infrastructure::{auth::{JwtService, PasswordService}, cache::CacheService},
 };
@@ -29,6 +29,7 @@ impl AppState {
         let property_repository = PropertyRepository::new(pool.clone());
         let post_repository = PostRepository::new(pool.clone());
         let response_repository = ResponseRepository::new(pool.clone());
+        let notification_repository = NotificationRepository::new(pool.clone());
         let audit_repository = AuditLogRepository::new(pool);
 
         let password_service = PasswordService;
@@ -43,10 +44,22 @@ impl AppState {
             jwt_service.clone(),
             cache_service.clone(),
         );
-        let user_service = UserService::new(user_repository.clone(), cache_service.clone());
+        let user_service = UserService::new(
+            user_repository.clone(),
+            property_repository.clone(),
+            post_repository.clone(),
+            notification_repository.clone(),
+            cache_service.clone(),
+        );
         let property_service =
             PropertyService::new(property_repository, user_repository.clone(), cache_service.clone());
-        let post_service = PostService::new(post_repository, response_repository, cache_service.clone());
+        let post_service = PostService::new(
+            post_repository,
+            response_repository,
+            user_repository.clone(),
+            notification_repository,
+            cache_service.clone(),
+        );
 
         Self {
             auth_use_cases: AuthUseCases::new(auth_service),

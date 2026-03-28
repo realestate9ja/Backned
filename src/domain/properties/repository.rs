@@ -23,11 +23,11 @@ impl PropertyRepository {
             r#"
             INSERT INTO properties (
                 id, owner_id, agent_id, title, price, location, exact_address, description, images,
-                contact_name, contact_phone, status
+                contact_name, contact_phone, is_service_apartment, status
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'published')
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'published')
             RETURNING id, owner_id, agent_id, title, price, location, exact_address, description, images,
-                      contact_name, contact_phone, status, created_at, updated_at
+                      contact_name, contact_phone, is_service_apartment, status, created_at, updated_at
             "#,
         )
         .bind(Uuid::new_v4())
@@ -41,6 +41,7 @@ impl PropertyRepository {
         .bind(&input.images)
         .bind(&input.contact_name)
         .bind(&input.contact_phone)
+        .bind(input.is_service_apartment)
         .fetch_one(&self.pool)
         .await?;
 
@@ -64,6 +65,7 @@ impl PropertyRepository {
                 p.location,
                 p.description,
                 p.images,
+                p.is_service_apartment,
                 p.owner_id,
                 p.agent_id,
                 owner.full_name AS owner_name,
@@ -112,6 +114,7 @@ impl PropertyRepository {
                 p.location,
                 p.description,
                 p.images,
+                p.is_service_apartment,
                 p.owner_id,
                 p.agent_id,
                 owner.full_name AS owner_name,
@@ -133,5 +136,121 @@ impl PropertyRepository {
 
         Ok(property)
     }
-}
 
+    pub async fn list_recent_by_owner(&self, owner_id: Uuid, limit: i64) -> Result<Vec<PropertyListItem>> {
+        let items = sqlx::query_as::<_, PropertyListItem>(
+            r#"
+            SELECT
+                p.id,
+                p.title,
+                p.price,
+                p.location,
+                p.description,
+                p.images,
+                p.is_service_apartment,
+                p.owner_id,
+                p.agent_id,
+                owner.full_name AS owner_name,
+                agent.full_name AS agent_name,
+                p.created_at
+            FROM properties p
+            INNER JOIN users owner ON owner.id = p.owner_id
+            LEFT JOIN users agent ON agent.id = p.agent_id
+            WHERE p.owner_id = $1
+            ORDER BY p.created_at DESC
+            LIMIT $2
+            "#,
+        )
+        .bind(owner_id)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(items)
+    }
+
+    pub async fn list_recent_managed_by_agent(&self, agent_id: Uuid, limit: i64) -> Result<Vec<PropertyListItem>> {
+        let items = sqlx::query_as::<_, PropertyListItem>(
+            r#"
+            SELECT
+                p.id,
+                p.title,
+                p.price,
+                p.location,
+                p.description,
+                p.images,
+                p.is_service_apartment,
+                p.owner_id,
+                p.agent_id,
+                owner.full_name AS owner_name,
+                agent.full_name AS agent_name,
+                p.created_at
+            FROM properties p
+            INNER JOIN users owner ON owner.id = p.owner_id
+            LEFT JOIN users agent ON agent.id = p.agent_id
+            WHERE p.agent_id = $1 OR p.owner_id = $1
+            ORDER BY p.created_at DESC
+            LIMIT $2
+            "#,
+        )
+        .bind(agent_id)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(items)
+    }
+
+    pub async fn count_owned_by_user(&self, owner_id: Uuid) -> Result<i64> {
+        let count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*)::bigint FROM properties WHERE owner_id = $1",
+        )
+        .bind(owner_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(count)
+    }
+
+    pub async fn count_managed_by_agent(&self, agent_id: Uuid) -> Result<i64> {
+        let count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*)::bigint FROM properties WHERE agent_id = $1 OR owner_id = $1",
+        )
+        .bind(agent_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(count)
+    }
+
+    pub async fn count_service_apartments_managed_by_agent(&self, agent_id: Uuid) -> Result<i64> {
+        let count = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)::bigint
+            FROM properties
+            WHERE is_service_apartment = TRUE
+              AND (agent_id = $1 OR owner_id = $1)
+            "#,
+        )
+        .bind(agent_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(count)
+    }
+
+    pub async fn count_distinct_assigned_agents_for_owner(&self, owner_id: Uuid) -> Result<i64> {
+        let count = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(DISTINCT agent_id)::bigint
+            FROM properties
+            WHERE owner_id = $1 AND agent_id IS NOT NULL
+            "#,
+        )
+        .bind(owner_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(count)
+    }
+}

@@ -1,8 +1,9 @@
 use crate::{
     domain::{
+        notifications::{AgentNotificationTarget, NotificationRepository},
         posts::{CreatePostInput, PostListItem, PostQuery, PostRepository},
         responses::{CreateResponseInput, ResponseCreated, ResponseRepository},
-        users::User,
+        users::{User, UserRepository},
     },
     infrastructure::cache::CacheService,
     interfaces::http::errors::AppError,
@@ -14,14 +15,24 @@ use uuid::Uuid;
 pub struct PostService {
     posts: PostRepository,
     responses: ResponseRepository,
+    users: UserRepository,
+    notifications: NotificationRepository,
     cache: CacheService,
 }
 
 impl PostService {
-    pub fn new(posts: PostRepository, responses: ResponseRepository, cache: CacheService) -> Self {
+    pub fn new(
+        posts: PostRepository,
+        responses: ResponseRepository,
+        users: UserRepository,
+        notifications: NotificationRepository,
+        cache: CacheService,
+    ) -> Self {
         Self {
             posts,
             responses,
+            users,
+            notifications,
             cache,
         }
     }
@@ -29,9 +40,23 @@ impl PostService {
     pub async fn create_post(&self, actor: &User, input: CreatePostInput) -> Result<Uuid, AppError> {
         validation::validate_money(input.budget, "budget")?;
         validation::validate_required(&input.location, "location")?;
+        validation::validate_required(&input.city, "city")?;
+        validation::validate_required(&input.state, "state")?;
         validation::validate_required(&input.description, "description")?;
 
         let post = self.posts.create(&input, actor.id).await?;
+        let recipients = self
+            .users
+            .list_notifiable_agents(&input.city, &input.state)
+            .await?
+            .into_iter()
+            .map(|agent| AgentNotificationTarget {
+                agent_id: agent.id,
+                matched_city: agent.operating_city,
+                matched_state: agent.operating_state,
+            })
+            .collect::<Vec<_>>();
+        self.notifications.create_for_post(post.id, &recipients).await?;
         self.cache.invalidate_namespace("posts:list").await?;
         Ok(post.id)
     }
@@ -43,10 +68,12 @@ impl PostService {
             .versioned_key(
                 "posts:list",
                 &format!(
-                    "page={}&per_page={}&location={}&min_budget={}&max_budget={}",
+                    "page={}&per_page={}&location={}&city={}&state={}&min_budget={}&max_budget={}",
                     pagination.page(),
                     pagination.per_page(),
                     query.location.clone().unwrap_or_default(),
+                    query.city.clone().unwrap_or_default(),
+                    query.state.clone().unwrap_or_default(),
                     query.min_budget.map(|v| v.to_string()).unwrap_or_default(),
                     query.max_budget.map(|v| v.to_string()).unwrap_or_default(),
                 ),
@@ -62,6 +89,8 @@ impl PostService {
                 pagination.limit(),
                 pagination.offset(),
                 query.location.as_deref(),
+                query.city.as_deref(),
+                query.state.as_deref(),
                 query.min_budget,
                 query.max_budget,
             )

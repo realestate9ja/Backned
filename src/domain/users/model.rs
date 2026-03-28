@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 
+use crate::{domain::{notifications::AgentPostNotificationItem, posts::PostListItem, properties::PropertyListItem}};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(type_name = "user_role", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
@@ -28,6 +30,9 @@ pub struct User {
     pub role: UserRole,
     pub phone: Option<String>,
     pub bio: Option<String>,
+    pub notifications_enabled: bool,
+    pub operating_city: Option<String>,
+    pub operating_state: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -48,6 +53,8 @@ pub struct AgentProfile {
     pub full_name: String,
     pub email: String,
     pub bio: Option<String>,
+    pub operating_city: Option<String>,
+    pub operating_state: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -84,4 +91,56 @@ pub struct LoginInput {
 pub struct AuthResponse {
     pub token: String,
     pub user: UserPublicView,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateAgentNotificationSettingsInput {
+    pub notifications_enabled: bool,
+    pub operating_city: Option<String>,
+    pub operating_state: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AgentNotificationSettingsView {
+    pub notifications_enabled: bool,
+    pub operating_city: Option<String>,
+    pub operating_state: Option<String>,
+}
+
+#[derive(Debug, Clone, FromRow)]
+pub struct AgentNotificationRecipient {
+    pub id: Uuid,
+    pub operating_city: String,
+    pub operating_state: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BuyerDashboard {
+    pub my_posts_count: i64,
+    pub recent_posts: Vec<PostListItem>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AgentDashboard {
+    pub managed_properties_count: i64,
+    pub service_apartments_count: i64,
+    pub unread_post_alerts_count: i64,
+    pub recent_properties: Vec<PropertyListItem>,
+    pub recent_post_alerts: Vec<AgentPostNotificationItem>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LandlordDashboard {
+    pub owned_properties_count: i64,
+    pub assigned_agents_count: i64,
+    pub recent_properties: Vec<PropertyListItem>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DashboardResponse {
+    pub role: UserRole,
+    pub profile: UserPublicView,
+    pub buyer: Option<BuyerDashboard>,
+    pub agent: Option<AgentDashboard>,
+    pub landlord: Option<LandlordDashboard>,
 }

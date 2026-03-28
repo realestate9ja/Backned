@@ -7,6 +7,8 @@ use uuid::Uuid;
 pub struct CreatePostInput {
     pub budget: i64,
     pub location: String,
+    pub city: String,
+    pub state: String,
     pub description: String,
 }
 
@@ -15,6 +17,8 @@ pub struct PostQuery {
     pub page: Option<u32>,
     pub per_page: Option<u32>,
     pub location: Option<String>,
+    pub city: Option<String>,
+    pub state: Option<String>,
     pub min_budget: Option<i64>,
     pub max_budget: Option<i64>,
 }
@@ -26,6 +30,8 @@ pub struct Post {
     pub author_id: Uuid,
     pub budget: i64,
     pub location: String,
+    pub city: String,
+    pub state: String,
     pub description: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -39,6 +45,8 @@ pub struct PostListItem {
     pub author_role: String,
     pub budget: i64,
     pub location: String,
+    pub city: String,
+    pub state: String,
     pub description: String,
     pub response_count: i64,
     pub created_at: DateTime<Utc>,
