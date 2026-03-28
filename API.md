@@ -37,6 +37,20 @@ Pagination rules:
 - `per_page` default: `20`
 - `per_page` max: `100`
 
+## Health Check
+
+`GET /health`
+
+Success `200`:
+
+```json
+{
+  "status": "ok",
+  "service": "verinest-backend",
+  "timestamp": "2026-03-28T08:00:00Z"
+}
+```
+
 ## 1. Register
 
 `POST /auth/register`

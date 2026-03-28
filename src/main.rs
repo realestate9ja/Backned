@@ -9,7 +9,7 @@ mod utils;
 use anyhow::Context;
 use axum::Router;
 use config::Settings;
-use db::create_pool;
+use db::{create_pool, run_migrations};
 use interfaces::http::{routes::create_router, state::AppState};
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
@@ -22,12 +22,15 @@ async fn main() -> anyhow::Result<()> {
 
     let settings = Settings::from_env()?;
     let pool = create_pool(&settings.database_url, settings.database_max_connections).await?;
+    run_migrations(&pool).await?;
     let state = AppState::new(pool, settings.clone());
     let app: Router = create_router(state);
     let addr = SocketAddr::from(([0, 0, 0, 0], settings.port));
     let listener = TcpListener::bind(addr)
         .await
         .with_context(|| format!("failed to bind to {addr}"))?;
+    let local_addr = listener.local_addr().context("failed to read local socket address")?;
+    tracing::info!("verinest backend listening on {}", local_addr);
 
     axum::serve(listener, app)
         .await
@@ -45,4 +48,3 @@ fn init_tracing() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 }
-

@@ -1,5 +1,5 @@
 use crate::interfaces::http::{
-    handlers::{auth, posts, properties, users},
+    handlers::{auth, health, posts, properties, users},
     middleware::audit::{audit_middleware, request_context_middleware},
     state::AppState,
 };
@@ -12,6 +12,7 @@ use tower_http::trace::TraceLayer;
 
 pub fn create_router(state: AppState) -> Router {
     Router::new()
+        .route("/health", get(health::health))
         .route("/auth/register", post(auth::register))
         .route("/auth/login", post(auth::login))
         .route("/users/{id}", get(users::get_user))
