@@ -48,15 +48,17 @@ impl AppState {
             user_repository.clone(),
             property_repository.clone(),
             post_repository.clone(),
+            response_repository.clone(),
             notification_repository.clone(),
             cache_service.clone(),
         );
         let property_service =
-            PropertyService::new(property_repository, user_repository.clone(), cache_service.clone());
+            PropertyService::new(property_repository.clone(), user_repository.clone(), cache_service.clone());
         let post_service = PostService::new(
             post_repository,
             response_repository,
             user_repository.clone(),
+            property_repository.clone(),
             notification_repository,
             cache_service.clone(),
         );

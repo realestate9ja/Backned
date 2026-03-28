@@ -42,10 +42,18 @@ impl NotificationRepository {
                 p.author_id,
                 u.full_name AS author_name,
                 u.role::text AS author_role,
-                p.budget,
                 p.location,
+                p.request_title,
+                p.area,
                 p.city,
                 p.state,
+                p.property_type,
+                p.bedrooms,
+                p.min_budget,
+                p.max_budget,
+                p.pricing_preference,
+                p.desired_features,
+                p.status,
                 p.description,
                 COALESCE(n.matched_city, '') AS matched_city,
                 COALESCE(n.matched_state, '') AS matched_state,
@@ -67,14 +75,45 @@ impl NotificationRepository {
         Ok(items)
     }
 
-    pub async fn count_unread_for_agent(&self, agent_id: Uuid) -> Result<i64> {
-        let count = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*)::bigint FROM agent_post_notifications WHERE agent_id = $1 AND is_read = FALSE",
+    pub async fn list_unread_for_agent(&self, agent_id: Uuid, limit: i64) -> Result<Vec<AgentPostNotificationItem>> {
+        let items = sqlx::query_as::<_, AgentPostNotificationItem>(
+            r#"
+            SELECT
+                n.id AS notification_id,
+                p.id AS post_id,
+                p.author_id,
+                u.full_name AS author_name,
+                u.role::text AS author_role,
+                p.location,
+                p.request_title,
+                p.area,
+                p.city,
+                p.state,
+                p.property_type,
+                p.bedrooms,
+                p.min_budget,
+                p.max_budget,
+                p.pricing_preference,
+                p.desired_features,
+                p.status,
+                p.description,
+                COALESCE(n.matched_city, '') AS matched_city,
+                COALESCE(n.matched_state, '') AS matched_state,
+                n.is_read,
+                n.created_at
+            FROM agent_post_notifications n
+            INNER JOIN posts p ON p.id = n.post_id
+            INNER JOIN users u ON u.id = p.author_id
+            WHERE n.agent_id = $1 AND n.is_read = FALSE
+            ORDER BY n.created_at DESC
+            LIMIT $2
+            "#,
         )
         .bind(agent_id)
-        .fetch_one(&self.pool)
+        .bind(limit)
+        .fetch_all(&self.pool)
         .await?;
 
-        Ok(count)
+        Ok(items)
     }
 }

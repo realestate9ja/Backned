@@ -3,9 +3,10 @@ use crate::{
         notifications::{AgentPostNotificationItem, NotificationRepository},
         posts::PostRepository,
         properties::PropertyRepository,
+        responses::{BuyerActiveRequest, ResponseRepository},
         users::{
-            AgentNotificationSettingsView, AgentProfile, DashboardResponse, LandlordDashboard, UpdateAgentNotificationSettingsInput,
-            User, UserPublicView, UserRepository, UserRole, AgentDashboard, BuyerDashboard,
+            AgentDashboard, AgentNotificationSettingsView, AgentProfile, BuyerDashboard, DashboardResponse,
+            LandlordDashboard, UpdateAgentNotificationSettingsInput, User, UserPublicView, UserRepository, UserRole,
         },
     },
     infrastructure::cache::CacheService,
@@ -19,6 +20,7 @@ pub struct UserService {
     users: UserRepository,
     properties: PropertyRepository,
     posts: PostRepository,
+    responses: ResponseRepository,
     notifications: NotificationRepository,
     cache: CacheService,
 }
@@ -28,6 +30,7 @@ impl UserService {
         users: UserRepository,
         properties: PropertyRepository,
         posts: PostRepository,
+        responses: ResponseRepository,
         notifications: NotificationRepository,
         cache: CacheService,
     ) -> Self {
@@ -35,6 +38,7 @@ impl UserService {
             users,
             properties,
             posts,
+            responses,
             notifications,
             cache,
         }
@@ -119,50 +123,40 @@ impl UserService {
 
         let response = match actor.role {
             UserRole::Buyer => {
-                let recent_posts = self.posts.list_recent_by_author(actor.id, 10).await?;
-                let my_posts_count = self.posts.count_by_author(actor.id).await?;
+                let active_requests = self.posts.list_active_by_author(actor.id, 10).await?;
+                let active_requests = futures_from_requests(&self.responses, active_requests).await?;
                 DashboardResponse {
                     role: actor.role,
                     profile,
                     buyer: Some(BuyerDashboard {
-                        my_posts_count,
-                        recent_posts,
+                        active_requests,
                     }),
                     agent: None,
                     landlord: None,
                 }
             }
             UserRole::Agent => {
-                let recent_properties = self.properties.list_recent_managed_by_agent(actor.id, 10).await?;
-                let recent_post_alerts = self.notifications.list_for_agent(actor.id, 10).await?;
-                let managed_properties_count = self.properties.count_managed_by_agent(actor.id).await?;
-                let service_apartments_count = self
+                let managed_properties = self.properties.list_recent_managed_by_agent(actor.id, 20).await?;
+                let service_apartments = self
                     .properties
-                    .count_service_apartments_managed_by_agent(actor.id)
+                    .list_service_apartments_managed_by_agent(actor.id, 20)
                     .await?;
-                let unread_post_alerts_count = self.notifications.count_unread_for_agent(actor.id).await?;
+                let unread_post_alerts = self.notifications.list_unread_for_agent(actor.id, 20).await?;
 
                 DashboardResponse {
                     role: actor.role,
                     profile,
                     buyer: None,
                     agent: Some(AgentDashboard {
-                        managed_properties_count,
-                        service_apartments_count,
-                        unread_post_alerts_count,
-                        recent_properties,
-                        recent_post_alerts,
+                        managed_properties,
+                        service_apartments,
+                        unread_post_alerts,
                     }),
                     landlord: None,
                 }
             }
             UserRole::Landlord => {
-                let recent_properties = self.properties.list_recent_by_owner(actor.id, 10).await?;
-                let owned_properties_count = self.properties.count_owned_by_user(actor.id).await?;
-                let assigned_agents_count = self
-                    .properties
-                    .count_distinct_assigned_agents_for_owner(actor.id)
-                    .await?;
+                let owned_properties = self.properties.list_recent_by_owner(actor.id, 20).await?;
 
                 DashboardResponse {
                     role: actor.role,
@@ -170,9 +164,7 @@ impl UserService {
                     buyer: None,
                     agent: None,
                     landlord: Some(LandlordDashboard {
-                        owned_properties_count,
-                        assigned_agents_count,
-                        recent_properties,
+                        owned_properties,
                     }),
                 }
             }
@@ -180,4 +172,20 @@ impl UserService {
 
         Ok(response)
     }
+}
+
+async fn futures_from_requests(
+    responses: &ResponseRepository,
+    requests: Vec<crate::domain::posts::PostListItem>,
+) -> Result<Vec<BuyerActiveRequest>, AppError> {
+    let mut items = Vec::with_capacity(requests.len());
+    for request in requests {
+        let request_id = request.id;
+        let request_responses = responses.list_with_properties_for_post(request_id).await?;
+        items.push(BuyerActiveRequest {
+            request,
+            responses: request_responses,
+        });
+    }
+    Ok(items)
 }

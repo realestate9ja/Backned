@@ -363,13 +363,29 @@ Request body:
 
 ```json
 {
-  "budget": 3000000,
-  "location": "Lekki",
-  "city": "Lagos",
-  "state": "Lagos",
-  "description": "Looking for a 2 bedroom apartment near Admiralty Way"
+  "request_title": "Need serviced apartment in Wuse 2",
+  "area": "Wuse 2",
+  "city": "Abuja",
+  "state": "FCT",
+  "property_type": "service_apartment",
+  "bedrooms": 2,
+  "min_budget": 3500000,
+  "max_budget": 5000000,
+  "pricing_preference": "monthly",
+  "desired_features": [
+    "gym",
+    "24/7 power",
+    "parking"
+  ],
+  "description": "Looking for a serviced apartment close to business district"
 }
 ```
+
+Notes:
+
+- `desired_features` must not be empty
+- `max_budget` must be greater than or equal to `min_budget`
+- `bedrooms` must be `0` or greater
 
 Success `201`:
 
@@ -386,13 +402,16 @@ Possible errors:
 
 ## 9. List Posts
 
-`GET /posts?page=1&per_page=10&location=Lekki&min_budget=1000000&max_budget=4000000`
+`GET /posts?page=1&per_page=10&property_type=service_apartment&city=Abuja&state=FCT&min_budget=3000000&max_budget=6000000`
 
 Query params:
 
 - `page`
 - `per_page`
 - `location`
+- `property_type`
+- `city`
+- `state`
 - `min_budget`
 - `max_budget`
 
@@ -401,17 +420,29 @@ Success `200`:
 ```json
 [
   {
-    "id": "d5b71ee7-7374-4393-92ad-d2f49ff2d637",
-    "author_id": "b13fc389-e376-41a3-a31a-e8e4b463ced5",
-    "author_name": "Buyer One",
+    "id": "66f0008d-dfc7-4c9d-82b1-bedcb959c57a",
+    "author_id": "efbf841d-373f-4853-b950-7c3c00db6b54",
+    "author_name": "Buyer Three",
     "author_role": "buyer",
-    "budget": 3000000,
-    "location": "Lekki",
-    "city": "Lagos",
-    "state": "Lagos",
-    "description": "Looking for a 2 bedroom apartment near Admiralty Way",
-    "response_count": 0,
-    "created_at": "2026-03-27T12:43:39.129864Z"
+    "location": "Wuse 2, Abuja",
+    "request_title": "Need serviced apartment in Wuse 2",
+    "area": "Wuse 2",
+    "city": "Abuja",
+    "state": "FCT",
+    "property_type": "service_apartment",
+    "bedrooms": 2,
+    "min_budget": 3500000,
+    "max_budget": 5000000,
+    "pricing_preference": "monthly",
+    "desired_features": [
+      "gym",
+      "24/7 power",
+      "parking"
+    ],
+    "status": "active",
+    "description": "Looking for a serviced apartment close to business district",
+    "response_count": 1,
+    "created_at": "2026-03-28T12:39:20.370277Z"
   }
 ]
 ```
@@ -434,19 +465,45 @@ Request body:
 
 ```json
 {
-  "message": "I have two matching options in Lekki Phase 1."
+  "message": "I have a serviced apartment that matches your request.",
+  "property_ids": [
+    "c34a4043-fafc-4527-ad8c-623b13e6f80a"
+  ]
 }
 ```
+
+Rules:
+
+- `property_ids` may be empty
+- when `property_ids` are provided, the responder must own or manage those properties on the platform
 
 Success `201`:
 
 ```json
 {
-  "id": "87b02982-7ed8-41d8-8c28-ffc4702eafed",
-  "post_id": "d5b71ee7-7374-4393-92ad-d2f49ff2d637",
-  "responder_id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b",
-  "message": "I have two matching options in Lekki Phase 1.",
-  "created_at": "2026-03-27T12:43:39.174098Z"
+  "id": "38d4554e-76aa-4329-8ede-48d6e3523225",
+  "post_id": "66f0008d-dfc7-4c9d-82b1-bedcb959c57a",
+  "responder_id": "11f32bdb-4b5a-423e-8bea-f8704b99c862",
+  "message": "I have a serviced apartment that matches your request.",
+  "properties": [
+    {
+      "id": "c34a4043-fafc-4527-ad8c-623b13e6f80a",
+      "title": "Serviced 2BR Apartment",
+      "price": 4200000,
+      "location": "Wuse 2, Abuja",
+      "description": "Serviced apartment with gym and power",
+      "images": [
+        "https://img.example/p1.jpg"
+      ],
+      "is_service_apartment": true,
+      "owner_id": "11f32bdb-4b5a-423e-8bea-f8704b99c862",
+      "agent_id": "11f32bdb-4b5a-423e-8bea-f8704b99c862",
+      "owner_name": "Agent Three",
+      "agent_name": "Agent Three",
+      "created_at": "2026-03-28T12:39:20.235733Z"
+    }
+  ],
+  "created_at": "2026-03-28T12:39:21.017164Z"
 }
 ```
 
@@ -501,13 +558,21 @@ Success `200`:
     "author_id": "uuid",
     "author_name": "Buyer One",
     "author_role": "buyer",
-    "budget": 3000000,
-    "location": "Lekki",
-    "city": "Lagos",
-    "state": "Lagos",
-    "description": "Looking for a 2 bedroom apartment near Admiralty Way",
-    "matched_city": "Lagos",
-    "matched_state": "Lagos",
+    "location": "Wuse 2, Abuja",
+    "request_title": "Need serviced apartment in Wuse 2",
+    "area": "Wuse 2",
+    "city": "Abuja",
+    "state": "FCT",
+    "property_type": "service_apartment",
+    "bedrooms": 2,
+    "min_budget": 3500000,
+    "max_budget": 5000000,
+    "pricing_preference": "monthly",
+    "desired_features": ["gym", "24/7 power", "parking"],
+    "status": "active",
+    "description": "Looking for a serviced apartment close to business district",
+    "matched_city": "Abuja",
+    "matched_state": "FCT",
     "is_read": false,
     "created_at": "2026-03-28T08:00:00Z"
   }
@@ -538,8 +603,42 @@ Buyer success `200`:
     "created_at": "2026-03-28T08:00:00Z"
   },
   "buyer": {
-    "my_posts_count": 2,
-    "recent_posts": []
+    "active_requests": [
+      {
+        "request": {
+          "id": "uuid",
+          "author_id": "uuid",
+          "author_name": "Buyer One",
+          "author_role": "buyer",
+          "location": "Wuse 2, Abuja",
+          "request_title": "Need serviced apartment in Wuse 2",
+          "area": "Wuse 2",
+          "city": "Abuja",
+          "state": "FCT",
+          "property_type": "service_apartment",
+          "bedrooms": 2,
+          "min_budget": 3500000,
+          "max_budget": 5000000,
+          "pricing_preference": "monthly",
+          "desired_features": ["gym", "24/7 power", "parking"],
+          "status": "active",
+          "description": "Looking for a serviced apartment",
+          "response_count": 1,
+          "created_at": "2026-03-28T08:00:00Z"
+        },
+        "responses": [
+          {
+            "response_id": "uuid",
+            "responder_id": "uuid",
+            "responder_name": "Agent One",
+            "responder_role": "agent",
+            "message": "I have a serviced apartment that matches your request.",
+            "properties": [],
+            "created_at": "2026-03-28T08:00:00Z"
+          }
+        ]
+      }
+    ]
   },
   "agent": null,
   "landlord": null
@@ -561,11 +660,9 @@ Agent success `200`:
   },
   "buyer": null,
   "agent": {
-    "managed_properties_count": 5,
-    "service_apartments_count": 2,
-    "unread_post_alerts_count": 3,
-    "recent_properties": [],
-    "recent_post_alerts": []
+    "managed_properties": [],
+    "service_apartments": [],
+    "unread_post_alerts": []
   },
   "landlord": null
 }
@@ -587,9 +684,7 @@ Landlord success `200`:
   "buyer": null,
   "agent": null,
   "landlord": {
-    "owned_properties_count": 4,
-    "assigned_agents_count": 2,
-    "recent_properties": []
+    "owned_properties": []
   }
 }
 ```
@@ -677,10 +772,18 @@ Possible errors:
   "author_id": "uuid",
   "author_name": "string",
   "author_role": "buyer | agent | landlord",
-  "budget": 0,
   "location": "string",
+  "request_title": "string",
+  "area": "string",
   "city": "string",
   "state": "string",
+  "property_type": "string",
+  "bedrooms": 0,
+  "min_budget": 0,
+  "max_budget": 0,
+  "pricing_preference": "string",
+  "desired_features": ["string"],
+  "status": "active | closed | fulfilled",
   "description": "string",
   "response_count": 0,
   "created_at": "ISO datetime"
@@ -695,6 +798,11 @@ Possible errors:
   "post_id": "uuid",
   "responder_id": "uuid",
   "message": "string",
+  "properties": [
+    {
+      "id": "uuid"
+    }
+  ],
   "created_at": "ISO datetime"
 }
 ```

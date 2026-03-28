@@ -3,7 +3,11 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 
-use crate::{domain::{notifications::AgentPostNotificationItem, posts::PostListItem, properties::PropertyListItem}};
+use crate::domain::{
+    notifications::AgentPostNotificationItem,
+    properties::PropertyListItem,
+    responses::BuyerActiveRequest,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(type_name = "user_role", rename_all = "snake_case")]
@@ -116,24 +120,19 @@ pub struct AgentNotificationRecipient {
 
 #[derive(Debug, Serialize)]
 pub struct BuyerDashboard {
-    pub my_posts_count: i64,
-    pub recent_posts: Vec<PostListItem>,
+    pub active_requests: Vec<BuyerActiveRequest>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct AgentDashboard {
-    pub managed_properties_count: i64,
-    pub service_apartments_count: i64,
-    pub unread_post_alerts_count: i64,
-    pub recent_properties: Vec<PropertyListItem>,
-    pub recent_post_alerts: Vec<AgentPostNotificationItem>,
+    pub managed_properties: Vec<PropertyListItem>,
+    pub service_apartments: Vec<PropertyListItem>,
+    pub unread_post_alerts: Vec<AgentPostNotificationItem>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct LandlordDashboard {
-    pub owned_properties_count: i64,
-    pub assigned_agents_count: i64,
-    pub recent_properties: Vec<PropertyListItem>,
+    pub owned_properties: Vec<PropertyListItem>,
 }
 
 #[derive(Debug, Serialize)]

@@ -3,9 +3,12 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 
+use crate::domain::properties::PropertyListItem;
+
 #[derive(Debug, Deserialize)]
 pub struct CreateResponseInput {
     pub message: String,
+    pub property_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Clone, FromRow)]
@@ -23,18 +26,33 @@ pub struct ResponseCreated {
     pub post_id: Uuid,
     pub responder_id: Uuid,
     pub message: String,
+    pub properties: Vec<PropertyListItem>,
     pub created_at: DateTime<Utc>,
 }
 
-impl From<Response> for ResponseCreated {
-    fn from(value: Response) -> Self {
-        Self {
-            id: value.id,
-            post_id: value.post_id,
-            responder_id: value.responder_id,
-            message: value.message,
-            created_at: value.created_at,
-        }
-    }
+#[derive(Debug, Clone, Serialize, FromRow)]
+pub struct PostResponseItem {
+    pub response_id: Uuid,
+    pub responder_id: Uuid,
+    pub responder_name: String,
+    pub responder_role: String,
+    pub message: String,
+    pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct PostResponseWithProperties {
+    pub response_id: Uuid,
+    pub responder_id: Uuid,
+    pub responder_name: String,
+    pub responder_role: String,
+    pub message: String,
+    pub properties: Vec<PropertyListItem>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BuyerActiveRequest {
+    pub request: crate::domain::posts::PostListItem,
+    pub responses: Vec<PostResponseWithProperties>,
+}

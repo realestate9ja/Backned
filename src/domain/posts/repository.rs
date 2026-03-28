@@ -16,17 +16,30 @@ impl PostRepository {
     pub async fn create(&self, input: &CreatePostInput, author_id: Uuid) -> Result<Post> {
         let post = sqlx::query_as::<_, Post>(
             r#"
-            INSERT INTO posts (id, author_id, budget, location, city, state, description)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING id, author_id, budget, location, city, state, description, created_at, updated_at
+            INSERT INTO posts (
+                id, author_id, budget, location, request_title, area, city, state, property_type,
+                bedrooms, min_budget, max_budget, pricing_preference, desired_features, status, description
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'active', $15)
+            RETURNING id, author_id, budget, location, request_title, area, city, state, property_type,
+                      bedrooms, min_budget, max_budget, pricing_preference, desired_features, status,
+                      description, created_at, updated_at
             "#,
         )
         .bind(Uuid::new_v4())
         .bind(author_id)
-        .bind(input.budget)
-        .bind(&input.location)
+        .bind(input.max_budget)
+        .bind(format!("{}, {}", input.area.trim(), input.city.trim()))
+        .bind(&input.request_title)
+        .bind(&input.area)
         .bind(&input.city)
         .bind(&input.state)
+        .bind(&input.property_type)
+        .bind(input.bedrooms)
+        .bind(input.min_budget)
+        .bind(input.max_budget)
+        .bind(&input.pricing_preference)
+        .bind(&input.desired_features)
         .bind(&input.description)
         .fetch_one(&self.pool)
         .await?;
@@ -39,6 +52,7 @@ impl PostRepository {
         limit: i64,
         offset: i64,
         location: Option<&str>,
+        property_type: Option<&str>,
         city: Option<&str>,
         state: Option<&str>,
         min_budget: Option<i64>,
@@ -51,10 +65,18 @@ impl PostRepository {
                 p.author_id,
                 u.full_name AS author_name,
                 u.role::text AS author_role,
-                p.budget,
                 p.location,
+                p.request_title,
+                p.area,
                 p.city,
                 p.state,
+                p.property_type,
+                p.bedrooms,
+                p.min_budget,
+                p.max_budget,
+                p.pricing_preference,
+                p.desired_features,
+                p.status,
                 p.description,
                 COUNT(r.id)::bigint AS response_count,
                 p.created_at
@@ -69,6 +91,10 @@ impl PostRepository {
             builder.push(" AND p.location ILIKE ");
             builder.push_bind(format!("%{location}%"));
         }
+        if let Some(property_type) = property_type {
+            builder.push(" AND p.property_type ILIKE ");
+            builder.push_bind(format!("%{property_type}%"));
+        }
         if let Some(city) = city {
             builder.push(" AND p.city ILIKE ");
             builder.push_bind(format!("%{city}%"));
@@ -78,11 +104,11 @@ impl PostRepository {
             builder.push_bind(format!("%{state}%"));
         }
         if let Some(min_budget) = min_budget {
-            builder.push(" AND p.budget >= ");
+            builder.push(" AND p.max_budget >= ");
             builder.push_bind(min_budget);
         }
         if let Some(max_budget) = max_budget {
-            builder.push(" AND p.budget <= ");
+            builder.push(" AND p.min_budget <= ");
             builder.push_bind(max_budget);
         }
 
@@ -105,7 +131,7 @@ impl PostRepository {
         Ok(posts)
     }
 
-    pub async fn list_recent_by_author(&self, author_id: Uuid, limit: i64) -> Result<Vec<PostListItem>> {
+    pub async fn list_active_by_author(&self, author_id: Uuid, limit: i64) -> Result<Vec<PostListItem>> {
         let posts = sqlx::query_as::<_, PostListItem>(
             r#"
             SELECT
@@ -113,17 +139,25 @@ impl PostRepository {
                 p.author_id,
                 u.full_name AS author_name,
                 u.role::text AS author_role,
-                p.budget,
                 p.location,
+                p.request_title,
+                p.area,
                 p.city,
                 p.state,
+                p.property_type,
+                p.bedrooms,
+                p.min_budget,
+                p.max_budget,
+                p.pricing_preference,
+                p.desired_features,
+                p.status,
                 p.description,
                 COUNT(r.id)::bigint AS response_count,
                 p.created_at
             FROM posts p
             INNER JOIN users u ON u.id = p.author_id
             LEFT JOIN responses r ON r.post_id = p.id
-            WHERE p.author_id = $1
+            WHERE p.author_id = $1 AND p.status = 'active'
             GROUP BY p.id, u.full_name, u.role
             ORDER BY p.created_at DESC
             LIMIT $2
@@ -135,17 +169,6 @@ impl PostRepository {
         .await?;
 
         Ok(posts)
-    }
-
-    pub async fn count_by_author(&self, author_id: Uuid) -> Result<i64> {
-        let count = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*)::bigint FROM posts WHERE author_id = $1",
-        )
-        .bind(author_id)
-        .fetch_one(&self.pool)
-        .await?;
-
-        Ok(count)
     }
 
     pub async fn exists(&self, post_id: Uuid) -> Result<bool> {
