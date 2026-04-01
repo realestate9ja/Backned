@@ -1,6 +1,6 @@
 use crate::{
     application::services::AuthService,
-    domain::users::{AuthResponse, LoginInput, RegisterUserInput},
+    domain::users::{AuthResponse, BootstrapAdminInput, LoginInput, RegisterUserInput},
     interfaces::http::errors::AppError,
 };
 
@@ -18,8 +18,11 @@ impl AuthUseCases {
         self.service.register(input).await
     }
 
+    pub async fn bootstrap_admin(&self, input: BootstrapAdminInput) -> Result<AuthResponse, AppError> {
+        self.service.bootstrap_admin(input).await
+    }
+
     pub async fn login(&self, input: LoginInput) -> Result<AuthResponse, AppError> {
         self.service.login(input).await
     }
 }
-

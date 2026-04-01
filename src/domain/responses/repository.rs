@@ -1,6 +1,9 @@
 use crate::domain::{
     properties::PropertyListItem,
-    responses::{CreateResponseInput, PostResponseItem, PostResponseWithProperties, Response, ResponseCreated},
+    responses::{
+        CreateResponseInput, PostResponseItem, PostResponseWithProperties, Response, ResponseContext,
+        ResponseCreated,
+    },
 };
 use anyhow::Result;
 use sqlx::{PgPool, Postgres, QueryBuilder};
@@ -10,6 +13,26 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct ResponseRepository {
     pool: PgPool,
+}
+
+#[derive(sqlx::FromRow)]
+struct ResponsePropertyRow {
+    response_id: Uuid,
+    id: Uuid,
+    title: String,
+    price: i64,
+    location: String,
+    description: String,
+    images: Vec<String>,
+    is_service_apartment: bool,
+    status: crate::domain::properties::PropertyStatus,
+    self_managed: bool,
+    owner_id: Uuid,
+    agent_id: Option<Uuid>,
+    owner_name: String,
+    agent_name: Option<String>,
+    created_at: chrono::DateTime<chrono::Utc>,
+    verified_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl ResponseRepository {
@@ -85,6 +108,7 @@ impl ResponseRepository {
             .into_iter()
             .map(|item| PostResponseWithProperties {
                 response_id: item.response_id,
+                post_id,
                 responder_id: item.responder_id,
                 responder_name: item.responder_name,
                 responder_role: item.responder_role,
@@ -95,29 +119,30 @@ impl ResponseRepository {
             .collect())
     }
 
+    pub async fn find_context(&self, response_id: Uuid) -> Result<Option<ResponseContext>> {
+        let item = sqlx::query_as::<_, ResponseContext>(
+            r#"
+            SELECT
+                p.author_id AS post_author_id,
+                r.responder_id
+            FROM responses r
+            INNER JOIN posts p ON p.id = r.post_id
+            WHERE r.id = $1
+            "#,
+        )
+        .bind(response_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(item)
+    }
+
     async fn properties_for_response_ids(
         &self,
         response_ids: &[Uuid],
     ) -> Result<HashMap<Uuid, Vec<PropertyListItem>>> {
         if response_ids.is_empty() {
             return Ok(HashMap::new());
-        }
-
-        #[derive(sqlx::FromRow)]
-        struct ResponsePropertyRow {
-            response_id: Uuid,
-            id: Uuid,
-            title: String,
-            price: i64,
-            location: String,
-            description: String,
-            images: Vec<String>,
-            is_service_apartment: bool,
-            owner_id: Uuid,
-            agent_id: Option<Uuid>,
-            owner_name: String,
-            agent_name: Option<String>,
-            created_at: chrono::DateTime<chrono::Utc>,
         }
 
         let rows = sqlx::query_as::<_, ResponsePropertyRow>(
@@ -131,11 +156,14 @@ impl ResponseRepository {
                 p.description,
                 p.images,
                 p.is_service_apartment,
+                p.status,
+                p.self_managed,
                 p.owner_id,
                 p.agent_id,
                 owner.full_name AS owner_name,
                 agent.full_name AS agent_name,
-                p.created_at
+                p.created_at,
+                p.verified_at
             FROM response_properties rp
             INNER JOIN properties p ON p.id = rp.property_id
             INNER JOIN users owner ON owner.id = p.owner_id
@@ -158,11 +186,14 @@ impl ResponseRepository {
                 description: row.description,
                 images: row.images,
                 is_service_apartment: row.is_service_apartment,
+                status: row.status,
+                self_managed: row.self_managed,
                 owner_id: row.owner_id,
                 agent_id: row.agent_id,
                 owner_name: row.owner_name,
                 agent_name: row.agent_name,
                 created_at: row.created_at,
+                verified_at: row.verified_at,
             });
         }
 

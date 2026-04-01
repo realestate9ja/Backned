@@ -58,6 +58,13 @@ impl AppError {
         }
     }
 
+    pub fn too_many_requests(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::TOO_MANY_REQUESTS,
+            message: message.into(),
+        }
+    }
+
     pub fn internal(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -92,4 +99,3 @@ impl From<sqlx::Error> for AppError {
         Self::from(Error::new(error))
     }
 }
-

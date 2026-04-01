@@ -16,11 +16,25 @@ pub enum UserRole {
     Buyer,
     Agent,
     Landlord,
+    Admin,
 }
 
 impl UserRole {
     pub fn can_manage_properties(self) -> bool {
         matches!(self, Self::Agent | Self::Landlord)
+    }
+
+    pub fn can_moderate(self) -> bool {
+        matches!(self, Self::Admin)
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Buyer => "buyer",
+            Self::Agent => "agent",
+            Self::Landlord => "landlord",
+            Self::Admin => "admin",
+        }
     }
 }
 
@@ -37,8 +51,21 @@ pub struct User {
     pub notifications_enabled: bool,
     pub operating_city: Option<String>,
     pub operating_state: Option<String>,
+    pub verification_status: String,
+    pub verification_notes: Option<String>,
+    pub verified_at: Option<DateTime<Utc>>,
+    pub quality_strikes: i32,
+    pub fraud_strikes: i32,
+    pub listing_restricted_until: Option<DateTime<Utc>>,
+    pub is_banned: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+impl User {
+    pub fn role_label(&self) -> &'static str {
+        self.role.as_str()
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -48,6 +75,9 @@ pub struct UserPublicView {
     pub email: String,
     pub role: UserRole,
     pub bio: Option<String>,
+    pub average_rating: Option<f64>,
+    pub review_count: i64,
+    pub verification_status: String,
     pub created_at: DateTime<Utc>,
 }
 
@@ -59,6 +89,9 @@ pub struct AgentProfile {
     pub bio: Option<String>,
     pub operating_city: Option<String>,
     pub operating_state: Option<String>,
+    pub average_rating: Option<f64>,
+    pub review_count: i64,
+    pub verification_status: String,
     pub created_at: DateTime<Utc>,
 }
 
@@ -70,6 +103,9 @@ impl From<User> for UserPublicView {
             email: user.email,
             role: user.role,
             bio: user.bio,
+            average_rating: None,
+            review_count: 0,
+            verification_status: user.verification_status,
             created_at: user.created_at,
         }
     }
@@ -86,6 +122,13 @@ pub struct RegisterUserInput {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct BootstrapAdminInput {
+    pub full_name: String,
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct LoginInput {
     pub email: String,
     pub password: String,
@@ -95,6 +138,12 @@ pub struct LoginInput {
 pub struct AuthResponse {
     pub token: String,
     pub user: UserPublicView,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateAgentVerificationInput {
+    pub verification_status: String,
+    pub verification_notes: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -121,6 +170,8 @@ pub struct AgentNotificationRecipient {
 #[derive(Debug, Serialize)]
 pub struct BuyerDashboard {
     pub active_requests: Vec<BuyerActiveRequest>,
+    pub live_video_sessions: Vec<crate::domain::workflow::LiveVideoSession>,
+    pub site_visits: Vec<crate::domain::workflow::SiteVisitView>,
 }
 
 #[derive(Debug, Serialize)]
@@ -128,11 +179,16 @@ pub struct AgentDashboard {
     pub managed_properties: Vec<PropertyListItem>,
     pub service_apartments: Vec<PropertyListItem>,
     pub unread_post_alerts: Vec<AgentPostNotificationItem>,
+    pub request_threads: Vec<crate::domain::workflow::RequestThread>,
+    pub live_video_sessions: Vec<crate::domain::workflow::LiveVideoSession>,
+    pub site_visits: Vec<crate::domain::workflow::SiteVisitView>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct LandlordDashboard {
     pub owned_properties: Vec<PropertyListItem>,
+    pub pending_verification_properties: Vec<PropertyListItem>,
+    pub agent_requests: Vec<crate::domain::workflow::PropertyAgentRequest>,
 }
 
 #[derive(Debug, Serialize)]

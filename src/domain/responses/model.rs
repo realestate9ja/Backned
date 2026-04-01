@@ -43,6 +43,7 @@ pub struct PostResponseItem {
 #[derive(Debug, Clone, Serialize)]
 pub struct PostResponseWithProperties {
     pub response_id: Uuid,
+    pub post_id: Uuid,
     pub responder_id: Uuid,
     pub responder_name: String,
     pub responder_role: String,
@@ -55,4 +56,10 @@ pub struct PostResponseWithProperties {
 pub struct BuyerActiveRequest {
     pub request: crate::domain::posts::PostListItem,
     pub responses: Vec<PostResponseWithProperties>,
+}
+
+#[derive(Debug, Clone, FromRow)]
+pub struct ResponseContext {
+    pub post_author_id: Uuid,
+    pub responder_id: Uuid,
 }

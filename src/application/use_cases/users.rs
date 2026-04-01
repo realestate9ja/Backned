@@ -2,7 +2,10 @@ use crate::{
     application::services::UserService,
     domain::{
         notifications::AgentPostNotificationItem,
-        users::{AgentNotificationSettingsView, AgentProfile, DashboardResponse, UpdateAgentNotificationSettingsInput, User, UserPublicView},
+        users::{
+            AgentNotificationSettingsView, AgentProfile, DashboardResponse, UpdateAgentNotificationSettingsInput,
+            UpdateAgentVerificationInput, User, UserPublicView,
+        },
     },
     interfaces::http::errors::AppError,
     utils::pagination::Pagination,
@@ -41,5 +44,14 @@ impl UserUseCases {
 
     pub async fn get_dashboard(&self, actor: &User) -> Result<DashboardResponse, AppError> {
         self.service.get_dashboard(actor).await
+    }
+
+    pub async fn update_agent_verification(
+        &self,
+        actor: &User,
+        agent_id: Uuid,
+        input: UpdateAgentVerificationInput,
+    ) -> Result<UserPublicView, AppError> {
+        self.service.update_agent_verification(actor, agent_id, input).await
     }
 }

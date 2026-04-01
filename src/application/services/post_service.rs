@@ -124,21 +124,27 @@ impl PostService {
         input: CreateResponseInput,
     ) -> Result<ResponseCreated, AppError> {
         validation::validate_required(&input.message, "message")?;
+        if !actor.role.can_manage_properties() {
+            return Err(AppError::forbidden(
+                "only agents and landlords can respond to requests with listed properties",
+            ));
+        }
+        if input.property_ids.is_empty() {
+            return Err(AppError::bad_request("property_ids must not be empty"));
+        }
 
         if !self.posts.exists(post_id).await? {
             return Err(AppError::not_found("post not found"));
         }
 
-        if !input.property_ids.is_empty() {
-            let properties = self
-                .properties
-                .list_owned_or_managed_by_user_for_ids(actor.id, &input.property_ids)
-                .await?;
-            if properties.len() != input.property_ids.len() {
-                return Err(AppError::forbidden(
-                    "you can only respond with properties you own or manage on the platform",
-                ));
-            }
+        let properties = self
+            .properties
+            .list_owned_or_managed_by_user_for_ids(actor.id, &input.property_ids)
+            .await?;
+        if properties.len() != input.property_ids.len() {
+            return Err(AppError::forbidden(
+                "you can only respond with properties you own or manage on the platform",
+            ));
         }
 
         let response = self.responses.create(post_id, actor.id, &input).await?;

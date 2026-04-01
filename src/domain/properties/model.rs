@@ -4,12 +4,15 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Type};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[sqlx(type_name = "property_status", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum PropertyStatus {
     Draft,
+    PendingVerification,
+    Verified,
     Published,
+    Suspended,
 }
 
 #[derive(Debug, Deserialize)]
@@ -23,7 +26,8 @@ pub struct CreatePropertyInput {
     pub contact_name: String,
     pub contact_phone: String,
     pub is_service_apartment: bool,
-    pub agent_id: Option<Uuid>,
+    pub requested_agent_id: Option<Uuid>,
+    pub self_managed: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -50,7 +54,10 @@ pub struct Property {
     pub contact_name: String,
     pub contact_phone: String,
     pub is_service_apartment: bool,
+    pub self_managed: bool,
     pub status: PropertyStatus,
+    pub verified_by: Option<Uuid>,
+    pub verified_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -64,11 +71,14 @@ pub struct PropertyListItem {
     pub description: String,
     pub images: Vec<String>,
     pub is_service_apartment: bool,
+    pub status: PropertyStatus,
+    pub self_managed: bool,
     pub owner_id: Uuid,
     pub agent_id: Option<Uuid>,
     pub owner_name: String,
     pub agent_name: Option<String>,
     pub created_at: DateTime<Utc>,
+    pub verified_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -80,6 +90,8 @@ pub struct PropertyDetail {
     pub description: String,
     pub images: Vec<String>,
     pub is_service_apartment: bool,
+    pub status: PropertyStatus,
+    pub self_managed: bool,
     pub owner_id: Uuid,
     pub agent_id: Option<Uuid>,
     pub owner_name: String,
@@ -87,6 +99,8 @@ pub struct PropertyDetail {
     pub exact_address: Option<String>,
     pub contact_name: Option<String>,
     pub contact_phone: Option<String>,
+    pub verified_by: Option<Uuid>,
+    pub verified_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

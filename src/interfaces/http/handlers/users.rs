@@ -1,5 +1,5 @@
 use crate::{
-    domain::users::UpdateAgentNotificationSettingsInput,
+    domain::users::{UpdateAgentNotificationSettingsInput, UpdateAgentVerificationInput},
     interfaces::http::{
         errors::AppError,
         middleware::auth::AuthUser,
@@ -53,4 +53,17 @@ pub async fn get_dashboard(
 ) -> Result<Json<crate::domain::users::DashboardResponse>, AppError> {
     let dashboard = state.user_use_cases.get_dashboard(&user).await?;
     Ok(Json(dashboard))
+}
+
+pub async fn update_agent_verification(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(agent_id): Path<Uuid>,
+    Json(payload): Json<UpdateAgentVerificationInput>,
+) -> Result<Json<crate::domain::users::UserPublicView>, AppError> {
+    let agent = state
+        .user_use_cases
+        .update_agent_verification(&user, agent_id, payload)
+        .await?;
+    Ok(Json(agent))
 }

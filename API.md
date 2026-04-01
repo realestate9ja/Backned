@@ -9,6 +9,7 @@ http://localhost:3000
 Auth:
 
 - Protected endpoints require `Authorization: Bearer <jwt>`
+- `POST /admin/bootstrap` requires `x-admin-bootstrap-token`
 - Every response includes `x-request-id`
 - Optional client headers:
   - `x-request-id: <uuid>`
@@ -30,12 +31,21 @@ Roles:
 - `buyer`
 - `agent`
 - `landlord`
+- `admin`
 
 Pagination rules:
 
 - `page` default: `1`
 - `per_page` default: `20`
 - `per_page` max: `100`
+
+Property lifecycle:
+
+- `draft`
+- `pending_verification`
+- `verified`
+- `published`
+- `suspended`
 
 ## Health Check
 
@@ -203,15 +213,20 @@ Request body:
   "contact_name": "Landlord One",
   "contact_phone": "+2348010000002",
   "is_service_apartment": true,
-  "agent_id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b"
+  "requested_agent_id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b",
+  "self_managed": false
 }
 ```
 
 Notes:
 
-- `agent_id` is optional
+- `requested_agent_id` is optional and only meaningful for landlords
 - if the caller is an `agent`, backend sets `agent_id` to the caller automatically
-- if the caller is a `landlord`, `agent_id` must belong to an existing agent when provided
+- agent-created properties publish immediately
+- if the caller is a `landlord` with no requested agent, the property is created as `self_managed: true`
+- landlord properties start as `pending_verification`
+- if a landlord requests an agent, the backend stores a `property_agent_request` and agent assignment must happen after verification
+- the `images` array can contain image URLs and service-apartment video URLs for MVP
 - buyers cannot create properties
 
 Success `201`:
@@ -227,13 +242,17 @@ Success `201`:
     "https://img.example/3.jpg"
   ],
   "is_service_apartment": true,
+  "status": "pending_verification",
+  "self_managed": false,
   "owner_id": "8766fabf-af8a-4c8e-80d4-79641a08f3e8",
-  "agent_id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b",
+  "agent_id": null,
   "owner_name": "Landlord One",
-  "agent_name": "Agent One",
+  "agent_name": null,
   "exact_address": "5 Banana Island Road, Ikoyi",
   "contact_name": "Landlord One",
   "contact_phone": "+2348010000002",
+  "verified_by": null,
+  "verified_at": null,
   "created_at": "2026-03-27T12:43:38.963174Z",
   "updated_at": "2026-03-27T12:43:38.963174Z"
 }
@@ -257,6 +276,284 @@ Query params:
 - `location`
 - `min_price`
 - `max_price`
+
+Only `published` properties appear in public property listing endpoints.
+
+## Workflow Endpoints
+
+### Verify Property
+
+`POST /properties/{id}/verify`
+
+Protected:
+
+- `agent`
+
+Moves a property from `pending_verification` to `verified`.
+
+### Publish Property
+
+`POST /properties/{id}/publish`
+
+Protected:
+
+- property owner
+- assigned agent
+
+Moves a property from `verified` to `published`.
+
+### Request Agent For Property
+
+`POST /properties/{id}/agent-request`
+
+Protected:
+
+- `landlord`
+
+Request body:
+
+```json
+{
+  "requested_agent_id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b",
+  "notes": "Need an agent for inspection and tenant coordination"
+}
+```
+
+### Assign Agent To Property
+
+`POST /properties/{id}/assign-agent`
+
+Protected:
+
+- `landlord`
+
+Request body:
+
+```json
+{
+  "agent_id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b"
+}
+```
+
+Property must already be `verified`.
+
+### Create Request Thread Message
+
+`POST /responses/{id}/thread/messages`
+
+Protected:
+
+- response buyer
+- response responder
+
+Request body:
+
+```json
+{
+  "message": "Can you show a live walkthrough tonight?"
+}
+```
+
+### Get Request Thread
+
+`GET /responses/{id}/thread`
+
+Protected:
+
+- response buyer
+- response responder
+
+### Create Live Video Session
+
+`POST /responses/{id}/live-video-sessions`
+
+Protected:
+
+- response buyer
+
+Request body:
+
+```json
+{
+  "scheduled_at": "2026-03-30T18:30:00Z",
+  "tracking_notes": "Buyer requested a WhatsApp walkthrough"
+}
+```
+
+Notes:
+
+- video is not stored
+- `recording_saved` is always `false`
+- provider is `livekit`
+- session lifecycle uses `requested`, `scheduled`, `live`, `completed`, `cancelled`
+
+### Update Live Video Session
+
+`PATCH /live-video-sessions/{id}`
+
+Protected:
+
+- session buyer
+- session agent/responder
+
+Request body:
+
+```json
+{
+  "status": "completed",
+  "started_at": "2026-03-30T18:30:00Z",
+  "ended_at": "2026-03-30T18:47:00Z",
+  "tracking_notes": "Buyer requested a second balcony sweep"
+}
+```
+
+### Get Live Video Session Access
+
+`GET /live-video-sessions/{id}`
+
+Protected:
+
+- session buyer
+- session agent/responder
+
+Success `200`:
+
+```json
+{
+  "session": {
+    "id": "80b8fa5c-1474-40b1-9e0a-ffef28166461",
+    "provider": "livekit",
+    "room_name": "verinest-live-80b8fa5c-1474-40b1-9e0a-ffef28166461",
+    "status": "requested"
+  },
+  "server_url": "wss://your-livekit-host",
+  "room_name": "verinest-live-80b8fa5c-1474-40b1-9e0a-ffef28166461",
+  "participant_identity": "buyer:9e46700d-3ce1-4a07-b362-4a1fd6375564",
+  "participant_name": "Buyer One",
+  "token": "livekit-join-jwt"
+}
+```
+
+### Create Site Visit
+
+`POST /responses/{id}/site-visits`
+
+Protected:
+
+- response buyer
+
+Request body:
+
+```json
+{
+  "property_id": "c631ab97-a289-433e-89c3-50a8c182c8de",
+  "scheduled_at": "2026-03-31T10:00:00Z",
+  "meeting_point": "Main gate, Wuse 2"
+}
+```
+
+### Update Site Visit
+
+`PATCH /site-visits/{id}`
+
+Request body:
+
+```json
+{
+  "status": "completed",
+  "meeting_point": "Reception lobby"
+}
+```
+
+### Certify Site Visit
+
+`POST /site-visits/{id}/certify`
+
+Request body:
+
+```json
+{
+  "notes": "Visit completed successfully and property condition matched listing"
+}
+```
+
+### Reviews
+
+`POST /reviews`
+
+Protected:
+
+- authenticated users
+
+Request body:
+
+```json
+{
+  "reviewee_id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b",
+  "property_id": "c631ab97-a289-433e-89c3-50a8c182c8de",
+  "response_id": "d0e2969c-a341-45b1-b78f-fd4d833f2f80",
+  "rating": 5,
+  "comment": "Responsive agent and accurate listing"
+}
+```
+
+`GET /users/{id}/reviews`
+
+### Reports
+
+`POST /reports`
+
+Protected:
+
+- authenticated users
+
+Request body:
+
+```json
+{
+  "reported_user_id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b",
+  "property_id": "c631ab97-a289-433e-89c3-50a8c182c8de",
+  "response_id": "d0e2969c-a341-45b1-b78f-fd4d833f2f80",
+  "violation_type": "fraud",
+  "reason": "misleading_listing",
+  "details": "The exact apartment shown on video was different from the photos"
+}
+```
+
+Violation types:
+
+- `quality`
+- `fraud`
+- `other`
+
+### Admin Moderation
+
+`POST /admin/reports/{id}/decision`
+
+Protected:
+
+- `admin`
+
+Request body:
+
+```json
+{
+  "status": "upheld",
+  "review_notes": "Evidence confirmed. Property suspended."
+}
+```
+
+Moderation statuses:
+
+- `upheld`
+- `dismissed`
+
+Enforcement:
+
+- property gets suspended after 3 low-rated reviews (`rating <= 2`)
+- upheld quality reports increase quality strikes
+- upheld fraud reports can suspend the property immediately
+- repeated fraud strikes can ban the reported account
 
 Success `200`:
 

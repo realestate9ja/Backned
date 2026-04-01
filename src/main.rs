@@ -1,16 +1,6 @@
-mod application;
-mod config;
-mod db;
-mod domain;
-mod infrastructure;
-mod interfaces;
-mod utils;
-
 use anyhow::Context;
 use axum::Router;
-use config::Settings;
-use db::{create_pool, run_migrations};
-use interfaces::http::{routes::create_router, state::AppState};
+use realestate::{build_app, config::Settings, db::{create_pool, run_migrations}};
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -23,8 +13,7 @@ async fn main() -> anyhow::Result<()> {
     let settings = Settings::from_env()?;
     let pool = create_pool(&settings.database_url, settings.database_max_connections).await?;
     run_migrations(&pool).await?;
-    let state = AppState::new(pool, settings.clone());
-    let app: Router = create_router(state);
+    let app: Router = build_app(pool, settings.clone());
     let addr = SocketAddr::from(([0, 0, 0, 0], settings.port));
     let listener = TcpListener::bind(addr)
         .await

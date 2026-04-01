@@ -9,6 +9,15 @@ pub struct Settings {
     pub jwt_expiration_minutes: i64,
     pub port: u16,
     pub database_max_connections: u32,
+    pub admin_bootstrap_token: String,
+    pub livekit_url: String,
+    pub livekit_api_key: String,
+    pub livekit_api_secret: String,
+    pub livekit_token_ttl_minutes: i64,
+    pub auth_rate_limit_max_requests: usize,
+    pub auth_rate_limit_window_seconds: u64,
+    pub trust_rate_limit_max_requests: usize,
+    pub trust_rate_limit_window_seconds: u64,
 }
 
 impl Settings {
@@ -32,6 +41,34 @@ impl Settings {
             .unwrap_or_else(|_| "10".to_string())
             .parse()
             .context("DATABASE_MAX_CONNECTIONS must be a valid integer")?;
+        let admin_bootstrap_token =
+            std::env::var("ADMIN_BOOTSTRAP_TOKEN").unwrap_or_else(|_| "dev-admin-bootstrap-token".to_string());
+        let livekit_url =
+            std::env::var("LIVEKIT_URL").unwrap_or_else(|_| "ws://127.0.0.1:7880".to_string());
+        let livekit_api_key =
+            std::env::var("LIVEKIT_API_KEY").unwrap_or_else(|_| "dev-livekit-key".to_string());
+        let livekit_api_secret =
+            std::env::var("LIVEKIT_API_SECRET").unwrap_or_else(|_| "dev-livekit-secret".to_string());
+        let livekit_token_ttl_minutes = std::env::var("LIVEKIT_TOKEN_TTL_MINUTES")
+            .unwrap_or_else(|_| "60".to_string())
+            .parse()
+            .context("LIVEKIT_TOKEN_TTL_MINUTES must be a valid integer")?;
+        let auth_rate_limit_max_requests = std::env::var("AUTH_RATE_LIMIT_MAX_REQUESTS")
+            .unwrap_or_else(|_| "10".to_string())
+            .parse()
+            .context("AUTH_RATE_LIMIT_MAX_REQUESTS must be a valid integer")?;
+        let auth_rate_limit_window_seconds = std::env::var("AUTH_RATE_LIMIT_WINDOW_SECONDS")
+            .unwrap_or_else(|_| "60".to_string())
+            .parse()
+            .context("AUTH_RATE_LIMIT_WINDOW_SECONDS must be a valid integer")?;
+        let trust_rate_limit_max_requests = std::env::var("TRUST_RATE_LIMIT_MAX_REQUESTS")
+            .unwrap_or_else(|_| "20".to_string())
+            .parse()
+            .context("TRUST_RATE_LIMIT_MAX_REQUESTS must be a valid integer")?;
+        let trust_rate_limit_window_seconds = std::env::var("TRUST_RATE_LIMIT_WINDOW_SECONDS")
+            .unwrap_or_else(|_| "60".to_string())
+            .parse()
+            .context("TRUST_RATE_LIMIT_WINDOW_SECONDS must be a valid integer")?;
 
         Ok(Self {
             database_url,
@@ -41,6 +78,15 @@ impl Settings {
             jwt_expiration_minutes,
             port,
             database_max_connections,
+            admin_bootstrap_token,
+            livekit_url,
+            livekit_api_key,
+            livekit_api_secret,
+            livekit_token_ttl_minutes,
+            auth_rate_limit_max_requests,
+            auth_rate_limit_window_seconds,
+            trust_rate_limit_max_requests,
+            trust_rate_limit_window_seconds,
         })
     }
 }
