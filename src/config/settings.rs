@@ -18,6 +18,16 @@ pub struct Settings {
     pub auth_rate_limit_window_seconds: u64,
     pub trust_rate_limit_max_requests: usize,
     pub trust_rate_limit_window_seconds: u64,
+    pub app_base_url: String,
+    pub mail_provider: String,
+    pub mail_from_email: String,
+    pub mail_from_name: String,
+    pub resend_api_key: Option<String>,
+    pub smtp_host: Option<String>,
+    pub smtp_port: u16,
+    pub smtp_username: Option<String>,
+    pub smtp_password: Option<String>,
+    pub smtp_use_starttls: bool,
 }
 
 impl Settings {
@@ -69,6 +79,25 @@ impl Settings {
             .unwrap_or_else(|_| "60".to_string())
             .parse()
             .context("TRUST_RATE_LIMIT_WINDOW_SECONDS must be a valid integer")?;
+        let app_base_url = std::env::var("APP_BASE_URL")
+            .unwrap_or_else(|_| format!("http://127.0.0.1:{port}"));
+        let mail_provider = std::env::var("MAIL_PROVIDER").unwrap_or_else(|_| "disabled".to_string());
+        let mail_from_email =
+            std::env::var("MAIL_FROM_EMAIL").unwrap_or_else(|_| "noreply@verinest.local".to_string());
+        let mail_from_name =
+            std::env::var("MAIL_FROM_NAME").unwrap_or_else(|_| "VeriNest".to_string());
+        let resend_api_key = std::env::var("RESEND_API_KEY").ok().filter(|value| !value.trim().is_empty());
+        let smtp_host = std::env::var("SMTP_HOST").ok().filter(|value| !value.trim().is_empty());
+        let smtp_port = std::env::var("SMTP_PORT")
+            .unwrap_or_else(|_| "587".to_string())
+            .parse()
+            .context("SMTP_PORT must be a valid integer")?;
+        let smtp_username = std::env::var("SMTP_USERNAME").ok().filter(|value| !value.trim().is_empty());
+        let smtp_password = std::env::var("SMTP_PASSWORD").ok().filter(|value| !value.trim().is_empty());
+        let smtp_use_starttls = std::env::var("SMTP_USE_STARTTLS")
+            .unwrap_or_else(|_| "true".to_string())
+            .parse()
+            .context("SMTP_USE_STARTTLS must be a valid boolean")?;
 
         Ok(Self {
             database_url,
@@ -87,6 +116,16 @@ impl Settings {
             auth_rate_limit_window_seconds,
             trust_rate_limit_max_requests,
             trust_rate_limit_window_seconds,
+            app_base_url,
+            mail_provider,
+            mail_from_email,
+            mail_from_name,
+            resend_api_key,
+            smtp_host,
+            smtp_port,
+            smtp_username,
+            smtp_password,
+            smtp_use_starttls,
         })
     }
 }

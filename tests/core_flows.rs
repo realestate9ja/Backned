@@ -34,7 +34,7 @@ async fn agent_verification_review_gating_and_moderation_flow() {
             "full_name": "Buyer One",
             "email": "buyer@test.local",
             "password": "StrongPass123",
-            "role": "buyer",
+            "role": "seeker",
             "bio": "Buyer"
         }),
     )
@@ -367,6 +367,72 @@ async fn auth_and_trust_routes_are_rate_limited() {
     assert_eq!(limited.0, StatusCode::TOO_MANY_REQUESTS);
 }
 
+#[tokio::test]
+async fn login_creates_email_verification_token_and_verify_endpoint_marks_user_verified() {
+    let _guard = test_mutex().lock().await;
+    let app = setup_app().await;
+
+    let user = register_user(
+        &app,
+        json!({
+            "full_name": "Buyer Verify",
+            "email": "verify@test.local",
+            "password": "StrongPass123",
+            "role": "seeker"
+        }),
+    )
+    .await;
+    assert_eq!(user["user"]["email_verified"], false);
+
+    let login = request_json(
+        &app,
+        Request::builder()
+            .method("POST")
+            .uri("/auth/login")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                json!({
+                    "email": "verify@test.local",
+                    "password": "StrongPass123"
+                })
+                .to_string(),
+            ))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(login.0, StatusCode::OK);
+
+    let database_url = std::env::var("TEST_DATABASE_URL")
+        .unwrap_or_else(|_| "postgresql://verinest:verinest@127.0.0.1:55432/verinest_test".to_string());
+    let pool = create_pool(&database_url, 1).await.expect("db pool");
+    let token: String = sqlx::query_scalar(
+        r#"
+        SELECT evt.token
+        FROM email_verification_tokens evt
+        JOIN users u ON u.id = evt.user_id
+        WHERE u.email = $1
+        ORDER BY evt.created_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind("verify@test.local")
+    .fetch_one(&pool)
+    .await
+    .expect("verification token");
+
+    let verified = request_json(
+        &app,
+        Request::builder()
+            .method("GET")
+            .uri(format!("/auth/verify-email?token={token}"))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(verified.0, StatusCode::OK);
+    assert_eq!(verified.1["email_verified"], true);
+}
+
 async fn setup_app() -> axum::Router {
     let database_url = std::env::var("TEST_DATABASE_URL")
         .unwrap_or_else(|_| "postgresql://verinest:verinest@127.0.0.1:55432/verinest_test".to_string());
@@ -389,6 +455,16 @@ async fn setup_app() -> axum::Router {
         auth_rate_limit_window_seconds: 60,
         trust_rate_limit_max_requests: 20,
         trust_rate_limit_window_seconds: 60,
+        app_base_url: "http://127.0.0.1:3000".to_string(),
+        mail_provider: "disabled".to_string(),
+        mail_from_email: "noreply@test.local".to_string(),
+        mail_from_name: "VeriNest Test".to_string(),
+        resend_api_key: None,
+        smtp_host: None,
+        smtp_port: 587,
+        smtp_username: None,
+        smtp_password: None,
+        smtp_use_starttls: true,
     };
 
     let pool = create_pool(&database_url, settings.database_max_connections)
@@ -403,9 +479,31 @@ async fn reset_database(pool: &PgPool) {
     sqlx::query(
         r#"
         TRUNCATE TABLE
+            notifications,
+            announcements,
+            disputes,
+            calendar_events,
+            maintenance_requests,
+            payouts,
+            transactions,
+            rent_charges,
+            leases,
+            units,
+            bookings,
+            offers,
+            lead_matches,
+            saved_properties,
+            verification_documents,
+            verifications,
+            landlord_profiles,
+            agent_profiles,
+            seeker_profiles,
+            profiles,
+            refresh_tokens,
             site_visit_certifications,
             site_visits,
             live_video_sessions,
+            email_verification_tokens,
             thread_messages,
             request_threads,
             property_agent_requests,

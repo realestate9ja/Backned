@@ -12,13 +12,19 @@ use crate::{
         properties::PropertyRepository, responses::ResponseRepository, trust::TrustRepository,
         users::UserRepository, workflow::WorkflowRepository,
     },
-    infrastructure::{auth::{JwtService, PasswordService}, cache::CacheService, livekit::LiveKitService},
+    infrastructure::{
+        auth::{JwtService, PasswordService},
+        cache::CacheService,
+        email::MailService,
+        livekit::LiveKitService,
+    },
     infrastructure::rate_limit::RateLimiter,
 };
 use sqlx::PgPool;
 
 #[derive(Clone)]
 pub struct AppState {
+    pub pool: PgPool,
     pub auth_use_cases: AuthUseCases,
     pub user_use_cases: UserUseCases,
     pub property_use_cases: PropertyUseCases,
@@ -28,6 +34,7 @@ pub struct AppState {
     pub audit_service: AuditService,
     pub jwt_service: JwtService,
     pub user_repository: UserRepository,
+    pub mail_service: MailService,
     pub admin_bootstrap_token: String,
     pub rate_limiter: RateLimiter,
 }
@@ -41,7 +48,7 @@ impl AppState {
         let notification_repository = NotificationRepository::new(pool.clone());
         let workflow_repository = WorkflowRepository::new(pool.clone());
         let trust_repository = TrustRepository::new(pool.clone());
-        let audit_repository = AuditLogRepository::new(pool);
+        let audit_repository = AuditLogRepository::new(pool.clone());
 
         let password_service = PasswordService;
         let jwt_service = JwtService::new(&settings);
@@ -53,6 +60,7 @@ impl AppState {
             settings.livekit_api_secret.clone(),
             settings.livekit_token_ttl_minutes,
         );
+        let mail_service = build_mail_service(&settings).expect("invalid mail config");
         let audit_service = AuditService::new(audit_repository);
         let rate_limiter = RateLimiter::new(
             settings.auth_rate_limit_max_requests,
@@ -66,6 +74,8 @@ impl AppState {
             password_service,
             jwt_service.clone(),
             cache_service.clone(),
+            mail_service.clone(),
+            settings.app_base_url.clone(),
         );
         let user_service = UserService::new(
             user_repository.clone(),
@@ -76,6 +86,7 @@ impl AppState {
             workflow_repository.clone(),
             trust_repository.clone(),
             cache_service.clone(),
+            mail_service.clone(),
         );
         let property_service = PropertyService::new(
             property_repository.clone(),
@@ -109,6 +120,7 @@ impl AppState {
         );
 
         Self {
+            pool,
             auth_use_cases: AuthUseCases::new(auth_service),
             user_use_cases: UserUseCases::new(user_service),
             property_use_cases: PropertyUseCases::new(property_service),
@@ -118,8 +130,45 @@ impl AppState {
             audit_service,
             jwt_service,
             user_repository,
+            mail_service,
             admin_bootstrap_token: settings.admin_bootstrap_token,
             rate_limiter,
         }
+    }
+}
+
+fn build_mail_service(settings: &Settings) -> anyhow::Result<MailService> {
+    match settings.mail_provider.trim().to_lowercase().as_str() {
+        "disabled" => Ok(MailService::disabled(
+            settings.mail_from_email.clone(),
+            settings.mail_from_name.clone(),
+        )),
+        "resend" => Ok(MailService::resend(
+            settings.mail_from_email.clone(),
+            settings.mail_from_name.clone(),
+            settings
+                .resend_api_key
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("RESEND_API_KEY is required when MAIL_PROVIDER=resend"))?,
+        )),
+        "smtp" => MailService::smtp(
+            settings.mail_from_email.clone(),
+            settings.mail_from_name.clone(),
+            settings
+                .smtp_host
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("SMTP_HOST is required when MAIL_PROVIDER=smtp"))?,
+            settings.smtp_port,
+            settings
+                .smtp_username
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("SMTP_USERNAME is required when MAIL_PROVIDER=smtp"))?,
+            settings
+                .smtp_password
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("SMTP_PASSWORD is required when MAIL_PROVIDER=smtp"))?,
+            settings.smtp_use_starttls,
+        ),
+        provider => Err(anyhow::anyhow!("unsupported MAIL_PROVIDER: {provider}")),
     }
 }

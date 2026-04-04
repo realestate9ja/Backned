@@ -1,13 +1,13 @@
 use crate::{
     application::services::{AuditActor, AuditEvent},
-    domain::users::{BootstrapAdminInput, LoginInput, RegisterUserInput},
+    domain::users::{BootstrapAdminInput, LoginInput, RegisterUserInput, VerifyEmailInput},
     interfaces::http::{
         errors::AppError,
         middleware::{bootstrap::AdminBootstrapToken, request_context::RequestContext},
         state::AppState,
     },
 };
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{extract::{Query, State}, http::StatusCode, Json};
 use serde_json::json;
 
 pub async fn register(
@@ -120,4 +120,42 @@ pub async fn bootstrap_admin(
         .await
         .map_err(anyhow::Error::from)?;
     Ok((StatusCode::CREATED, Json(response)))
+}
+
+pub async fn verify_email(
+    State(state): State<AppState>,
+    context: RequestContext,
+    Query(payload): Query<VerifyEmailInput>,
+) -> Result<Json<crate::domain::users::UserPublicView>, AppError> {
+    let response = state.auth_use_cases.verify_email(payload).await?;
+    state
+        .audit_service
+        .record(
+            AuditActor {
+                user_id: Some(response.id),
+                email: Some(response.email.clone()),
+                role: Some(
+                    serde_json::to_string(&response.role)
+                        .map_err(anyhow::Error::from)?
+                        .trim_matches('"')
+                        .to_string(),
+                ),
+            },
+            AuditEvent {
+                request_id: context.request_id,
+                action: "auth.verify_email".to_string(),
+                method: "GET".to_string(),
+                path: "/auth/verify-email".to_string(),
+                status_code: StatusCode::OK.as_u16(),
+                ip_address: context.ip_address,
+                user_agent: context.user_agent,
+                resource_type: Some("user".to_string()),
+                resource_id: Some(response.id),
+                success: true,
+                metadata: json!({}),
+            },
+        )
+        .await
+        .map_err(anyhow::Error::from)?;
+    Ok(Json(response))
 }

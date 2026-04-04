@@ -53,7 +53,7 @@ pub struct PostResponseWithProperties {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct BuyerActiveRequest {
+pub struct SeekerActiveRequest {
     pub request: crate::domain::posts::PostListItem,
     pub responses: Vec<PostResponseWithProperties>,
 }

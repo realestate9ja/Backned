@@ -3,16 +3,16 @@ use crate::{
         notifications::{AgentPostNotificationItem, NotificationRepository},
         posts::PostRepository,
         properties::PropertyRepository,
-        responses::{BuyerActiveRequest, ResponseRepository},
+        responses::{ResponseRepository, SeekerActiveRequest},
         trust::TrustRepository,
         users::{
-            AgentDashboard, AgentNotificationSettingsView, AgentProfile, BuyerDashboard, DashboardResponse,
+            AgentDashboard, AgentNotificationSettingsView, AgentProfile, DashboardResponse,
             LandlordDashboard, UpdateAgentNotificationSettingsInput, UpdateAgentVerificationInput, User,
-            UserPublicView, UserRepository, UserRole,
+            UserPublicView, UserRepository, UserRole, SeekerDashboard,
         },
         workflow::WorkflowRepository,
     },
-    infrastructure::cache::CacheService,
+    infrastructure::{cache::CacheService, email::MailService},
     interfaces::http::errors::AppError,
     utils::{pagination::Pagination, validation},
 };
@@ -28,6 +28,7 @@ pub struct UserService {
     workflow: WorkflowRepository,
     trust: TrustRepository,
     cache: CacheService,
+    mail_service: MailService,
 }
 
 impl UserService {
@@ -40,6 +41,7 @@ impl UserService {
         workflow: WorkflowRepository,
         trust: TrustRepository,
         cache: CacheService,
+        mail_service: MailService,
     ) -> Self {
         Self {
             users,
@@ -50,6 +52,7 @@ impl UserService {
             workflow,
             trust,
             cache,
+            mail_service,
         }
     }
 
@@ -153,6 +156,13 @@ impl UserService {
             .await?
             .ok_or_else(|| AppError::not_found("agent not found"))?;
         self.cache.invalidate_namespace("agents").await?;
+        let email = self.mail_service.kyc_status_email(
+            updated.email.clone(),
+            &updated.full_name,
+            &updated.verification_status,
+            updated.verification_notes.as_deref(),
+        );
+        self.mail_service.send(email).await?;
 
         let summary = self.trust.summary_for_user(updated.id).await?;
         let mut view = UserPublicView::from(updated);
@@ -168,7 +178,7 @@ impl UserService {
         profile.review_count = summary.review_count;
 
         let response = match actor.role {
-            UserRole::Buyer => {
+            UserRole::Seeker => {
                 let active_requests = self.posts.list_active_by_author(actor.id, 10).await?;
                 let active_requests = futures_from_requests(&self.responses, active_requests).await?;
                 let live_video_sessions = self.workflow.list_live_video_sessions_for_user(actor.id, 20).await?;
@@ -176,7 +186,7 @@ impl UserService {
                 DashboardResponse {
                     role: actor.role,
                     profile,
-                    buyer: Some(BuyerDashboard {
+                    seeker: Some(SeekerDashboard {
                         active_requests,
                         live_video_sessions,
                         site_visits,
@@ -199,7 +209,7 @@ impl UserService {
                 DashboardResponse {
                     role: actor.role,
                     profile,
-                    buyer: None,
+                    seeker: None,
                     agent: Some(AgentDashboard {
                         managed_properties,
                         service_apartments,
@@ -239,7 +249,7 @@ impl UserService {
                 DashboardResponse {
                     role: actor.role,
                     profile,
-                    buyer: None,
+                    seeker: None,
                     agent: None,
                     landlord: Some(LandlordDashboard {
                         owned_properties,
@@ -251,7 +261,7 @@ impl UserService {
             UserRole::Admin => DashboardResponse {
                 role: actor.role,
                 profile,
-                buyer: None,
+                seeker: None,
                 agent: None,
                 landlord: None,
             },
@@ -264,12 +274,12 @@ impl UserService {
 async fn futures_from_requests(
     responses: &ResponseRepository,
     requests: Vec<crate::domain::posts::PostListItem>,
-) -> Result<Vec<BuyerActiveRequest>, AppError> {
+) -> Result<Vec<SeekerActiveRequest>, AppError> {
     let mut items = Vec::with_capacity(requests.len());
     for request in requests {
         let request_id = request.id;
         let request_responses = responses.list_with_properties_for_post(request_id).await?;
-        items.push(BuyerActiveRequest {
+        items.push(SeekerActiveRequest {
             request,
             responses: request_responses,
         });

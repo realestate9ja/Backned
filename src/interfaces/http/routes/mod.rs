@@ -1,5 +1,5 @@
 use crate::interfaces::http::{
-    handlers::{auth, health, posts, properties, trust, users, workflow},
+    handlers::{api_v1, auth, health, posts, properties, trust, users, workflow},
     middleware::{
         audit::{audit_middleware, request_context_middleware},
         rate_limit::{auth_rate_limit_middleware, trust_rate_limit_middleware},
@@ -30,6 +30,7 @@ pub fn create_router(state: AppState) -> Router {
                 auth_rate_limit_middleware,
             )),
         )
+        .route("/auth/verify-email", get(auth::verify_email))
         .route(
             "/admin/bootstrap",
             post(auth::bootstrap_admin).route_layer(middleware::from_fn_with_state(
@@ -80,8 +81,54 @@ pub fn create_router(state: AppState) -> Router {
             )),
         )
         .route("/admin/reports/{id}/decision", post(trust::moderate_report))
+        .nest("/api/v1", create_api_v1_router(state.clone()))
         .layer(middleware::from_fn_with_state(state.clone(), audit_middleware))
         .layer(middleware::from_fn(request_context_middleware))
         .layer(TraceLayer::new_for_http())
+        .with_state(state)
+}
+
+fn create_api_v1_router(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route("/auth/register", post(auth::register).route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth_rate_limit_middleware,
+        )))
+        .route("/auth/login", post(auth::login).route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth_rate_limit_middleware,
+        )))
+        .route("/auth/verify-email", get(auth::verify_email))
+        .route("/auth/me", get(api_v1::me))
+        .route("/auth/refresh", post(api_v1::refresh).route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth_rate_limit_middleware,
+        )))
+        .route("/auth/logout", post(api_v1::logout))
+        .route("/onboarding/profile", axum::routing::put(api_v1::upsert_onboarding_profile))
+        .route("/verifications", post(api_v1::create_verification))
+        .route("/verifications/me", get(api_v1::get_my_verification))
+        .route("/verifications/{id}/documents", post(api_v1::create_verification_document))
+        .route("/properties", get(api_v1::list_public_properties))
+        .route("/properties/{id}", get(properties::get_property))
+        .route("/agent/properties", post(properties::create_property).get(api_v1::list_agent_properties))
+        .route("/seeker/needs", post(api_v1::create_seeker_need).get(api_v1::list_seeker_needs))
+        .route("/agent/leads", get(api_v1::list_agent_leads))
+        .route("/offers", post(api_v1::create_offer))
+        .route("/seeker/offers", get(api_v1::list_seeker_offers))
+        .route("/seeker/saved-properties", post(api_v1::create_saved_property).get(api_v1::list_saved_properties))
+        .route("/seeker/saved-properties/{propertyId}", axum::routing::delete(api_v1::delete_saved_property))
+        .route("/bookings", post(api_v1::create_booking))
+        .route("/seeker/bookings", get(api_v1::list_seeker_bookings))
+        .route("/agent/bookings", get(api_v1::list_agent_bookings))
+        .route("/landlord/properties", get(api_v1::list_landlord_properties))
+        .route("/landlord/units", get(api_v1::list_landlord_units))
+        .route("/landlord/collections", get(api_v1::list_landlord_collections))
+        .route("/landlord/payouts", get(api_v1::list_landlord_payouts))
+        .route("/landlord/maintenance", get(api_v1::list_landlord_maintenance))
+        .route("/landlord/calendar", get(api_v1::list_landlord_calendar))
+        .route("/admin/metrics/overview", get(api_v1::admin_metrics_overview))
+        .route("/admin/verifications", get(api_v1::admin_list_verifications))
+        .route("/admin/verifications/{id}", patch(api_v1::admin_update_verification))
         .with_state(state)
 }

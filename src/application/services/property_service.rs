@@ -99,7 +99,7 @@ impl PropertyService {
                     )
                 }
             }
-            UserRole::Buyer => (None, false, None, crate::domain::properties::PropertyStatus::Draft),
+            UserRole::Seeker => (None, false, None, crate::domain::properties::PropertyStatus::Draft),
             UserRole::Admin => (None, false, None, crate::domain::properties::PropertyStatus::Draft),
         };
 
@@ -188,7 +188,7 @@ impl PropertyService {
 
             let visibility = match user.role {
                 UserRole::Agent | UserRole::Landlord | UserRole::Admin => "privileged",
-                UserRole::Buyer => "restricted",
+                UserRole::Seeker => "restricted",
             };
             let cache_key = self
                 .cache
@@ -215,7 +215,7 @@ impl PropertyService {
             .find_published_detail_by_id(id)
             .await?
             .ok_or_else(|| AppError::not_found("property not found"))?
-            .sanitize_for_role(UserRole::Buyer);
+            .sanitize_for_role(UserRole::Seeker);
         self.cache.set_json(&cache_key, &detail).await?;
         Ok(detail)
     }

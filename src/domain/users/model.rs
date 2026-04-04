@@ -6,14 +6,14 @@ use uuid::Uuid;
 use crate::domain::{
     notifications::AgentPostNotificationItem,
     properties::PropertyListItem,
-    responses::BuyerActiveRequest,
+    responses::SeekerActiveRequest,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(type_name = "user_role", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum UserRole {
-    Buyer,
+    Seeker,
     Agent,
     Landlord,
     Admin,
@@ -30,7 +30,7 @@ impl UserRole {
 
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Buyer => "buyer",
+            Self::Seeker => "seeker",
             Self::Agent => "agent",
             Self::Landlord => "landlord",
             Self::Admin => "admin",
@@ -44,6 +44,7 @@ pub struct User {
     pub id: Uuid,
     pub full_name: String,
     pub email: String,
+    pub email_verified: bool,
     pub password_hash: String,
     pub role: UserRole,
     pub phone: Option<String>,
@@ -73,6 +74,7 @@ pub struct UserPublicView {
     pub id: Uuid,
     pub full_name: String,
     pub email: String,
+    pub email_verified: bool,
     pub role: UserRole,
     pub bio: Option<String>,
     pub average_rating: Option<f64>,
@@ -101,6 +103,7 @@ impl From<User> for UserPublicView {
             id: user.id,
             full_name: user.full_name,
             email: user.email,
+            email_verified: user.email_verified,
             role: user.role,
             bio: user.bio,
             average_rating: None,
@@ -134,9 +137,15 @@ pub struct LoginInput {
     pub password: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct VerifyEmailInput {
+    pub token: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct AuthResponse {
     pub token: String,
+    pub refresh_token: String,
     pub user: UserPublicView,
 }
 
@@ -168,8 +177,8 @@ pub struct AgentNotificationRecipient {
 }
 
 #[derive(Debug, Serialize)]
-pub struct BuyerDashboard {
-    pub active_requests: Vec<BuyerActiveRequest>,
+pub struct SeekerDashboard {
+    pub active_requests: Vec<SeekerActiveRequest>,
     pub live_video_sessions: Vec<crate::domain::workflow::LiveVideoSession>,
     pub site_visits: Vec<crate::domain::workflow::SiteVisitView>,
 }
@@ -195,7 +204,7 @@ pub struct LandlordDashboard {
 pub struct DashboardResponse {
     pub role: UserRole,
     pub profile: UserPublicView,
-    pub buyer: Option<BuyerDashboard>,
+    pub seeker: Option<SeekerDashboard>,
     pub agent: Option<AgentDashboard>,
     pub landlord: Option<LandlordDashboard>,
 }

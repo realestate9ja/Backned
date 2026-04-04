@@ -107,7 +107,7 @@ pub struct PropertyDetail {
 
 impl PropertyDetail {
     pub fn sanitize_for_role(mut self, role: UserRole) -> Self {
-        if matches!(role, UserRole::Buyer) {
+        if matches!(role, UserRole::Seeker) {
             self.exact_address = None;
             self.contact_name = None;
             self.contact_phone = None;
