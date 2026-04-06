@@ -1,4 +1,4 @@
-# VeriNest Backend API
+# VeriNest API
 
 Base URL:
 
@@ -6,15 +6,25 @@ Base URL:
 http://localhost:3000
 ```
 
+Primary compatibility prefix:
+
+```text
+/api/v1
+```
+
 Auth:
 
 - Protected endpoints require `Authorization: Bearer <jwt>`
 - `POST /admin/bootstrap` requires `x-admin-bootstrap-token`
-- Every response includes `x-request-id`
-- Optional client headers:
-  - `x-request-id: <uuid>`
-  - `x-forwarded-for: <client-ip>`
-  - `x-real-ip: <client-ip>`
+- Login and register return both `token` and `refresh_token`
+- `GET /auth/verify-email` and `GET /api/v1/auth/verify-email` share the same behavior
+
+Roles:
+
+- `seeker`
+- `agent`
+- `landlord`
+- `admin`
 
 Common error format:
 
@@ -26,250 +36,272 @@ Common error format:
 }
 ```
 
-Roles:
+## Auth
 
-- `buyer`
-- `agent`
-- `landlord`
-- `admin`
+### `POST /api/v1/auth/register`
 
-Pagination rules:
-
-- `page` default: `1`
-- `per_page` default: `20`
-- `per_page` max: `100`
-
-Property lifecycle:
-
-- `draft`
-- `pending_verification`
-- `verified`
-- `published`
-- `suspended`
-
-## Health Check
-
-`GET /health`
-
-Success `200`:
+Request:
 
 ```json
 {
-  "status": "ok",
-  "service": "verinest-backend",
-  "timestamp": "2026-03-28T08:00:00Z"
-}
-```
-
-## 1. Register
-
-`POST /auth/register`
-
-Request body:
-
-```json
-{
-  "full_name": "Buyer One",
-  "email": "buyer@example.com",
+  "full_name": "Seeker One",
+  "email": "seeker@example.com",
   "password": "StrongPass123",
-  "role": "buyer",
+  "role": "seeker",
   "phone": "+2348010000000",
-  "bio": "Optional profile bio"
+  "bio": "Optional bio"
 }
 ```
-
-Notes:
-
-- `phone` is optional
-- `bio` is optional
-- `password` must be at least 8 characters
 
 Success `201`:
 
 ```json
 {
   "token": "jwt-token",
+  "refresh_token": "refresh-token",
   "user": {
-    "id": "b13fc389-e376-41a3-a31a-e8e4b463ced5",
-    "full_name": "Buyer One",
-    "email": "buyer@example.com",
-    "role": "buyer",
-    "bio": "Optional profile bio",
-    "created_at": "2026-03-27T12:43:35.984063Z"
+    "id": "e1c6d38e-7b85-4d18-b0eb-090d6d742c8e",
+    "full_name": "Seeker One",
+    "email": "seeker@example.com",
+    "email_verified": false,
+    "role": "seeker",
+    "bio": "Optional bio",
+    "average_rating": null,
+    "review_count": 0,
+    "verification_status": "not_required",
+    "created_at": "2026-04-06T09:00:00Z"
   }
 }
 ```
 
-Possible errors:
+### `POST /api/v1/auth/login`
 
-- `400` invalid input
-- `409` user with this email already exists
-
-## 2. Login
-
-`POST /auth/login`
-
-Request body:
+Request:
 
 ```json
 {
-  "email": "buyer@example.com",
+  "email": "seeker@example.com",
   "password": "StrongPass123"
 }
 ```
 
-Success `200`:
-
-```json
-{
-  "token": "jwt-token",
-  "user": {
-    "id": "b13fc389-e376-41a3-a31a-e8e4b463ced5",
-    "full_name": "Buyer One",
-    "email": "buyer@example.com",
-    "role": "buyer",
-    "bio": "Buyer",
-    "created_at": "2026-03-27T12:43:35.984063Z"
-  }
-}
-```
-
-Possible errors:
-
-- `400` invalid email or missing password
-- `401` invalid credentials
-
-## 3. Get User
-
-`GET /users/{id}`
-
-Success `200`:
-
-```json
-{
-  "id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b",
-  "full_name": "Agent One",
-  "email": "agent@example.com",
-  "role": "agent",
-  "bio": "Licensed agent",
-  "created_at": "2026-03-27T12:43:36.857242Z"
-}
-```
-
-Possible errors:
-
-- `404` user not found
-
-## 4. List Agents
-
-`GET /agents?page=1&per_page=10`
-
-Query params:
-
-- `page`
-- `per_page`
-
-Success `200`:
-
-```json
-[
-  {
-    "id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b",
-    "full_name": "Agent One",
-    "email": "agent@example.com",
-    "bio": "Licensed agent",
-    "operating_city": "Lagos",
-    "operating_state": "Lagos",
-    "created_at": "2026-03-27T12:43:36.857242Z"
-  }
-]
-```
-
-Possible errors:
-
-- `400` invalid pagination
-
-## 5. Create Property
-
-`POST /properties`
-
-Protected:
-
-- `agent`
-- `landlord`
-
-Request body:
-
-```json
-{
-  "title": "4 Bedroom Duplex",
-  "price": 8000000,
-  "location": "Ikoyi",
-  "exact_address": "5 Banana Island Road, Ikoyi",
-  "description": "Owner listed duplex",
-  "images": [
-    "https://img.example/3.jpg"
-  ],
-  "contact_name": "Landlord One",
-  "contact_phone": "+2348010000002",
-  "is_service_apartment": true,
-  "requested_agent_id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b",
-  "self_managed": false
-}
-```
+Success `200`: same shape as register.
 
 Notes:
 
-- `requested_agent_id` is optional and only meaningful for landlords
-- if the caller is an `agent`, backend sets `agent_id` to the caller automatically
-- agent-created properties publish immediately
-- if the caller is a `landlord` with no requested agent, the property is created as `self_managed: true`
-- landlord properties start as `pending_verification`
-- if a landlord requests an agent, the backend stores a `property_agent_request` and agent assignment must happen after verification
-- the `images` array can contain image URLs and service-apartment video URLs for MVP
-- buyers cannot create properties
+- if `email_verified` is `false`, login sends a verification email using the configured mail provider
+
+### `GET /api/v1/auth/verify-email?token={token}`
+
+Success `200`:
+
+```json
+{
+  "id": "e1c6d38e-7b85-4d18-b0eb-090d6d742c8e",
+  "full_name": "Seeker One",
+  "email": "seeker@example.com",
+  "email_verified": true,
+  "role": "seeker",
+  "bio": "Optional bio",
+  "average_rating": null,
+  "review_count": 0,
+  "verification_status": "not_required",
+  "created_at": "2026-04-06T09:00:00Z"
+}
+```
+
+### `POST /api/v1/auth/refresh`
+
+Request:
+
+```json
+{
+  "refreshToken": "refresh-token"
+}
+```
+
+Success `200`: same shape as register, with a new `refresh_token`.
+
+### `POST /api/v1/auth/logout`
+
+Request:
+
+```json
+{
+  "refreshToken": "refresh-token"
+}
+```
+
+Success `204`
+
+### `GET /api/v1/auth/me`
+
+Success `200`:
+
+```json
+{
+  "user": {
+    "id": "e1c6d38e-7b85-4d18-b0eb-090d6d742c8e",
+    "full_name": "Seeker One",
+    "email": "seeker@example.com",
+    "email_verified": false,
+    "role": "seeker",
+    "bio": "Optional bio",
+    "average_rating": null,
+    "review_count": 0,
+    "verification_status": "not_required",
+    "created_at": "2026-04-06T09:00:00Z"
+  },
+  "profile": {
+    "id": "e1c6d38e-7b85-4d18-b0eb-090d6d742c8e",
+    "userId": "e1c6d38e-7b85-4d18-b0eb-090d6d742c8e",
+    "fullName": "Seeker One",
+    "phone": null,
+    "city": null,
+    "avatarUrl": null,
+    "bio": "Optional bio",
+    "onboardingCompleted": false,
+    "createdAt": "2026-04-06T09:00:00Z",
+    "updatedAt": "2026-04-06T09:00:00Z"
+  },
+  "roleProfile": null,
+  "verification": null
+}
+```
+
+## Onboarding
+
+### `PUT /api/v1/onboarding/profile`
+
+Protected.
+
+Seeker request:
+
+```json
+{
+  "role": "seeker",
+  "phone": "+2348012345678",
+  "city": "Lagos",
+  "preferredCity": "Lagos",
+  "preferredAccommodationType": "Rent",
+  "preferredBudgetLabel": "500k-1m",
+  "moveInTimeline": "Within 1 month"
+}
+```
+
+Agent request:
+
+```json
+{
+  "role": "agent",
+  "phone": "+2348012345678",
+  "city": "Lagos",
+  "companyName": "Prime Realtors Ltd",
+  "experienceRange": "3-5 years",
+  "specializations": ["Residential", "Luxury"],
+  "bio": "Focused on premium residential leasing."
+}
+```
+
+Landlord request:
+
+```json
+{
+  "role": "landlord",
+  "phone": "+2348012345678",
+  "city": "Abuja",
+  "propertyCountRange": "2-5",
+  "propertyTypes": ["Flat / Apartment", "Duplex"],
+  "currentAgentStatus": "No"
+}
+```
+
+Success `200`: same shape as `GET /api/v1/auth/me`, with populated `roleProfile`.
+
+## Verifications
+
+### `POST /api/v1/verifications`
+
+Protected: `agent`, `landlord`
+
+Request:
+
+```json
+{
+  "notes": "Agent KYC submitted"
+}
+```
 
 Success `201`:
 
 ```json
 {
-  "id": "c631ab97-a289-433e-89c3-50a8c182c8de",
-  "title": "4 Bedroom Duplex",
-  "price": 8000000,
-  "location": "Ikoyi",
-  "description": "Owner listed duplex",
-  "images": [
-    "https://img.example/3.jpg"
-  ],
-  "is_service_apartment": true,
-  "status": "pending_verification",
-  "self_managed": false,
-  "owner_id": "8766fabf-af8a-4c8e-80d4-79641a08f3e8",
-  "agent_id": null,
-  "owner_name": "Landlord One",
-  "agent_name": null,
-  "exact_address": "5 Banana Island Road, Ikoyi",
-  "contact_name": "Landlord One",
-  "contact_phone": "+2348010000002",
-  "verified_by": null,
-  "verified_at": null,
-  "created_at": "2026-03-27T12:43:38.963174Z",
-  "updated_at": "2026-03-27T12:43:38.963174Z"
+  "id": "df9b1e9c-4ef8-47f1-8d77-c9ac75e520a8",
+  "userId": "0bf4f4d5-48a9-4b7b-aaf4-77e805fc2902",
+  "status": "submitted",
+  "submittedAt": "2026-04-06T09:05:00Z",
+  "reviewedAt": null,
+  "reviewedBy": null,
+  "rejectionReason": null,
+  "notes": "Agent KYC submitted",
+  "createdAt": "2026-04-06T09:05:00Z",
+  "updatedAt": "2026-04-06T09:05:00Z"
 }
 ```
 
-Possible errors:
+### `POST /api/v1/verifications/{id}/documents`
 
-- `400` invalid body
-- `401` missing or invalid token
-- `403` insufficient permissions
-- `400` assigned agent does not exist
+Request:
 
-## 6. List Properties
+```json
+{
+  "documentType": "nin",
+  "fileUrl": "https://cdn.example.com/agent-nin.pdf",
+  "fileKey": "agent-nin.pdf",
+  "mimeType": "application/pdf"
+}
+```
 
-`GET /properties?page=1&per_page=10&location=Ikoyi&min_price=1000000&max_price=10000000`
+### `GET /api/v1/verifications/me`
 
-Query params:
+Success `200`:
+
+```json
+{
+  "verification": {
+    "id": "df9b1e9c-4ef8-47f1-8d77-c9ac75e520a8",
+    "userId": "0bf4f4d5-48a9-4b7b-aaf4-77e805fc2902",
+    "status": "submitted",
+    "submittedAt": "2026-04-06T09:05:00Z",
+    "reviewedAt": null,
+    "reviewedBy": null,
+    "rejectionReason": null,
+    "notes": "Agent KYC submitted",
+    "createdAt": "2026-04-06T09:05:00Z",
+    "updatedAt": "2026-04-06T09:05:00Z"
+  },
+  "documents": [
+    {
+      "id": "fb3ab324-240d-4c46-98b8-65c7b02d2c46",
+      "verificationId": "df9b1e9c-4ef8-47f1-8d77-c9ac75e520a8",
+      "documentType": "nin",
+      "fileUrl": "https://cdn.example.com/agent-nin.pdf",
+      "fileKey": "agent-nin.pdf",
+      "mimeType": "application/pdf",
+      "status": "uploaded",
+      "createdAt": "2026-04-06T09:06:00Z"
+    }
+  ]
+}
+```
+
+## Public Properties
+
+### `GET /api/v1/properties`
+
+Uses the existing public property feed.
+
+Supported query params:
 
 - `page`
 - `per_page`
@@ -277,829 +309,354 @@ Query params:
 - `min_price`
 - `max_price`
 
-Only `published` properties appear in public property listing endpoints.
+### `GET /api/v1/properties/{id}`
 
-## Workflow Endpoints
+Protected and public-safe.
 
-### Verify Property
+For seekers and unauthenticated callers, sensitive fields are hidden:
 
-`POST /properties/{id}/verify`
+- `exact_address`
+- `contact_name`
+- `contact_phone`
 
-Protected:
+## Agent Properties
 
-- `agent`
+### `POST /api/v1/agent/properties`
 
-Moves a property from `pending_verification` to `verified`.
+Protected: `agent`
 
-### Publish Property
-
-`POST /properties/{id}/publish`
-
-Protected:
-
-- property owner
-- assigned agent
-
-Moves a property from `verified` to `published`.
-
-### Request Agent For Property
-
-`POST /properties/{id}/agent-request`
-
-Protected:
-
-- `landlord`
-
-Request body:
+Request:
 
 ```json
 {
-  "requested_agent_id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b",
-  "notes": "Need an agent for inspection and tenant coordination"
-}
-```
-
-### Assign Agent To Property
-
-`POST /properties/{id}/assign-agent`
-
-Protected:
-
-- `landlord`
-
-Request body:
-
-```json
-{
-  "agent_id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b"
-}
-```
-
-Property must already be `verified`.
-
-### Create Request Thread Message
-
-`POST /responses/{id}/thread/messages`
-
-Protected:
-
-- response buyer
-- response responder
-
-Request body:
-
-```json
-{
-  "message": "Can you show a live walkthrough tonight?"
-}
-```
-
-### Get Request Thread
-
-`GET /responses/{id}/thread`
-
-Protected:
-
-- response buyer
-- response responder
-
-### Create Live Video Session
-
-`POST /responses/{id}/live-video-sessions`
-
-Protected:
-
-- response buyer
-
-Request body:
-
-```json
-{
-  "scheduled_at": "2026-03-30T18:30:00Z",
-  "tracking_notes": "Buyer requested a WhatsApp walkthrough"
+  "title": "Ocean View Apartment",
+  "price": 4500000,
+  "location": "Lekki Phase 1",
+  "exact_address": "10 Admiralty Way, Lekki",
+  "description": "Serviced apartment with video tour",
+  "images": [
+    "https://cdn.example.com/front.jpg",
+    "https://cdn.example.com/tour.mp4"
+  ],
+  "contact_name": "Agent One",
+  "contact_phone": "+2348010000001",
+  "is_service_apartment": true
 }
 ```
 
 Notes:
 
-- video is not stored
-- `recording_saved` is always `false`
-- provider is `livekit`
-- session lifecycle uses `requested`, `scheduled`, `live`, `completed`, `cancelled`
+- agent must be verified before listing
+- media is currently stored in `images` as URL strings, including video URLs
 
-### Update Live Video Session
+### `GET /api/v1/agent/properties`
 
-`PATCH /live-video-sessions/{id}`
+Protected: `agent`
 
-Protected:
+Returns the agent’s owned or managed properties.
 
-- session buyer
-- session agent/responder
+## Seeker Needs
 
-Request body:
+### `POST /api/v1/seeker/needs`
 
-```json
-{
-  "status": "completed",
-  "started_at": "2026-03-30T18:30:00Z",
-  "ended_at": "2026-03-30T18:47:00Z",
-  "tracking_notes": "Buyer requested a second balcony sweep"
-}
-```
+Protected: `seeker`
 
-### Get Live Video Session Access
-
-`GET /live-video-sessions/{id}`
-
-Protected:
-
-- session buyer
-- session agent/responder
-
-Success `200`:
+Request:
 
 ```json
 {
-  "session": {
-    "id": "80b8fa5c-1474-40b1-9e0a-ffef28166461",
-    "provider": "livekit",
-    "room_name": "verinest-live-80b8fa5c-1474-40b1-9e0a-ffef28166461",
-    "status": "requested"
-  },
-  "server_url": "wss://your-livekit-host",
-  "room_name": "verinest-live-80b8fa5c-1474-40b1-9e0a-ffef28166461",
-  "participant_identity": "buyer:9e46700d-3ce1-4a07-b362-4a1fd6375564",
-  "participant_name": "Buyer One",
-  "token": "livekit-join-jwt"
-}
-```
-
-### Create Site Visit
-
-`POST /responses/{id}/site-visits`
-
-Protected:
-
-- response buyer
-
-Request body:
-
-```json
-{
-  "property_id": "c631ab97-a289-433e-89c3-50a8c182c8de",
-  "scheduled_at": "2026-03-31T10:00:00Z",
-  "meeting_point": "Main gate, Wuse 2"
-}
-```
-
-### Update Site Visit
-
-`PATCH /site-visits/{id}`
-
-Request body:
-
-```json
-{
-  "status": "completed",
-  "meeting_point": "Reception lobby"
-}
-```
-
-### Certify Site Visit
-
-`POST /site-visits/{id}/certify`
-
-Request body:
-
-```json
-{
-  "notes": "Visit completed successfully and property condition matched listing"
-}
-```
-
-### Reviews
-
-`POST /reviews`
-
-Protected:
-
-- authenticated users
-
-Request body:
-
-```json
-{
-  "reviewee_id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b",
-  "property_id": "c631ab97-a289-433e-89c3-50a8c182c8de",
-  "response_id": "d0e2969c-a341-45b1-b78f-fd4d833f2f80",
-  "rating": 5,
-  "comment": "Responsive agent and accurate listing"
-}
-```
-
-`GET /users/{id}/reviews`
-
-### Reports
-
-`POST /reports`
-
-Protected:
-
-- authenticated users
-
-Request body:
-
-```json
-{
-  "reported_user_id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b",
-  "property_id": "c631ab97-a289-433e-89c3-50a8c182c8de",
-  "response_id": "d0e2969c-a341-45b1-b78f-fd4d833f2f80",
-  "violation_type": "fraud",
-  "reason": "misleading_listing",
-  "details": "The exact apartment shown on video was different from the photos"
-}
-```
-
-Violation types:
-
-- `quality`
-- `fraud`
-- `other`
-
-### Admin Moderation
-
-`POST /admin/reports/{id}/decision`
-
-Protected:
-
-- `admin`
-
-Request body:
-
-```json
-{
-  "status": "upheld",
-  "review_notes": "Evidence confirmed. Property suspended."
-}
-```
-
-Moderation statuses:
-
-- `upheld`
-- `dismissed`
-
-Enforcement:
-
-- property gets suspended after 3 low-rated reviews (`rating <= 2`)
-- upheld quality reports increase quality strikes
-- upheld fraud reports can suspend the property immediately
-- repeated fraud strikes can ban the reported account
-
-Success `200`:
-
-```json
-[
-  {
-    "id": "c631ab97-a289-433e-89c3-50a8c182c8de",
-    "title": "4 Bedroom Duplex",
-    "price": 8000000,
-    "location": "Ikoyi",
-    "description": "Owner listed duplex",
-    "images": [
-      "https://img.example/3.jpg"
-    ],
-    "is_service_apartment": true,
-    "owner_id": "8766fabf-af8a-4c8e-80d4-79641a08f3e8",
-    "agent_id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b",
-    "owner_name": "Landlord One",
-    "agent_name": "Agent One",
-    "created_at": "2026-03-27T12:43:38.963174Z"
-  }
-]
-```
-
-Possible errors:
-
-- `400` invalid pagination
-
-## 7. Get Property Detail
-
-`GET /properties/{id}`
-
-Auth behavior:
-
-- public request: restricted view
-- logged in `buyer`: restricted view
-- logged in `agent` or `landlord`: full view
-
-Restricted response `200`:
-
-```json
-{
-  "id": "c631ab97-a289-433e-89c3-50a8c182c8de",
-  "title": "4 Bedroom Duplex",
-  "price": 8000000,
-  "location": "Ikoyi",
-  "description": "Owner listed duplex",
-  "images": [
-    "https://img.example/3.jpg"
-  ],
-  "is_service_apartment": true,
-  "owner_id": "8766fabf-af8a-4c8e-80d4-79641a08f3e8",
-  "agent_id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b",
-  "owner_name": "Landlord One",
-  "agent_name": "Agent One",
-  "exact_address": null,
-  "contact_name": null,
-  "contact_phone": null,
-  "created_at": "2026-03-27T12:43:38.963174Z",
-  "updated_at": "2026-03-27T12:43:38.963174Z"
-}
-```
-
-Privileged response `200`:
-
-```json
-{
-  "id": "c631ab97-a289-433e-89c3-50a8c182c8de",
-  "title": "4 Bedroom Duplex",
-  "price": 8000000,
-  "location": "Ikoyi",
-  "description": "Owner listed duplex",
-  "images": [
-    "https://img.example/3.jpg"
-  ],
-  "is_service_apartment": true,
-  "owner_id": "8766fabf-af8a-4c8e-80d4-79641a08f3e8",
-  "agent_id": "fb02bbf8-de20-495f-b676-4d3750bc5f8b",
-  "owner_name": "Landlord One",
-  "agent_name": "Agent One",
-  "exact_address": "5 Banana Island Road, Ikoyi",
-  "contact_name": "Landlord One",
-  "contact_phone": "+2348010000002",
-  "created_at": "2026-03-27T12:43:38.963174Z",
-  "updated_at": "2026-03-27T12:43:38.963174Z"
-}
-```
-
-Possible errors:
-
-- `404` property not found
-
-## 8. Create Post
-
-`POST /posts`
-
-Protected:
-
-- `buyer`
-- `agent`
-- `landlord`
-
-Request body:
-
-```json
-{
-  "request_title": "Need serviced apartment in Wuse 2",
-  "area": "Wuse 2",
-  "city": "Abuja",
-  "state": "FCT",
+  "request_title": "Need 2-bed serviced apartment",
+  "area": "Lekki Phase 1",
+  "city": "Lagos",
+  "state": "Lagos",
   "property_type": "service_apartment",
   "bedrooms": 2,
-  "min_budget": 3500000,
+  "min_budget": 3000000,
   "max_budget": 5000000,
   "pricing_preference": "monthly",
-  "desired_features": [
-    "gym",
-    "24/7 power",
-    "parking"
-  ],
-  "description": "Looking for a serviced apartment close to business district"
+  "desired_features": ["wifi", "parking"],
+  "description": "Looking for furnished apartment"
+}
+```
+
+Success `201`:
+
+```json
+{
+  "id": "3cfe8fb0-96cb-4c8a-aa9a-8a9e8a39a46f"
+}
+```
+
+### `GET /api/v1/seeker/needs`
+
+Protected: `seeker`
+
+Returns the seeker’s own need posts.
+
+## Agent Leads
+
+### `GET /api/v1/agent/leads`
+
+Protected: `agent`
+
+Returns agent lead rows derived from post notifications and optional `lead_matches`.
+
+Success item shape:
+
+```json
+{
+  "id": "0b842cfd-c4d5-48b6-80b6-93d9cc1d8bd5",
+  "needPostId": "3cfe8fb0-96cb-4c8a-aa9a-8a9e8a39a46f",
+  "matchedPropertyId": null,
+  "matchScore": 0,
+  "status": "new",
+  "slaExpiresAt": null,
+  "createdAt": "2026-04-06T09:12:00Z",
+  "updatedAt": "2026-04-06T09:12:00Z",
+  "requestTitle": "Need 2-bed serviced apartment",
+  "location": "Lekki Phase 1, Lagos",
+  "propertyType": "service_apartment",
+  "urgency": null
+}
+```
+
+## Offers
+
+### `POST /api/v1/offers`
+
+Protected: `agent`, `landlord`
+
+Request:
+
+```json
+{
+  "needPostId": "3cfe8fb0-96cb-4c8a-aa9a-8a9e8a39a46f",
+  "propertyId": "4d7d50b8-5a4b-4abf-80e7-587855edcff0",
+  "offerPriceAmount": 4500000,
+  "offerPriceCurrency": "NGN",
+  "offerPricePeriod": "year",
+  "message": "This matches your request",
+  "prioritySend": true
+}
+```
+
+### `GET /api/v1/seeker/offers`
+
+Protected: `seeker`
+
+Returns offers against the seeker’s needs.
+
+## Saved Properties
+
+### `POST /api/v1/seeker/saved-properties`
+
+Protected: `seeker`
+
+Request:
+
+```json
+{
+  "propertyId": "4d7d50b8-5a4b-4abf-80e7-587855edcff0"
+}
+```
+
+### `GET /api/v1/seeker/saved-properties`
+
+Protected: `seeker`
+
+### `DELETE /api/v1/seeker/saved-properties/{propertyId}`
+
+Protected: `seeker`
+
+Success `204`
+
+## Bookings
+
+### `POST /api/v1/bookings`
+
+Protected: `seeker`
+
+Request:
+
+```json
+{
+  "offerId": "c2962262-d3f0-45d0-876d-2db9f454f5d2",
+  "propertyId": "4d7d50b8-5a4b-4abf-80e7-587855edcff0",
+  "bookingType": "viewing",
+  "scheduledFor": "2026-04-10T10:00:00Z",
+  "notes": "Please confirm"
+}
+```
+
+### `GET /api/v1/seeker/bookings`
+
+Protected: `seeker`
+
+### `GET /api/v1/agent/bookings`
+
+Protected: `agent`
+
+## Landlord
+
+### `GET /api/v1/landlord/properties`
+
+Protected: `landlord`
+
+### `GET /api/v1/landlord/units`
+
+Protected: `landlord`
+
+Unit item shape:
+
+```json
+{
+  "id": "11111111-1111-1111-1111-111111111111",
+  "propertyId": "03e8c35e-f352-4771-a155-7a9a7a5615f5",
+  "unitCode": "A1",
+  "name": "Palm Residence A1",
+  "unitType": "flat",
+  "bedroomsLabel": "2-bed",
+  "rentAmount": 850000,
+  "rentCurrency": "NGN",
+  "rentPeriod": "year",
+  "occupancyStatus": "occupied",
+  "listingStatus": "listed",
+  "tenantUserId": "e1c6d38e-7b85-4d18-b0eb-090d6d742c8e",
+  "leaseId": "22222222-2222-2222-2222-222222222222",
+  "createdAt": "2026-04-06T09:20:00Z",
+  "updatedAt": "2026-04-06T09:20:00Z"
+}
+```
+
+### `GET /api/v1/landlord/collections`
+
+Protected: `landlord`
+
+### `GET /api/v1/landlord/payouts`
+
+Protected: `landlord`
+
+### `GET /api/v1/landlord/maintenance`
+
+Protected: `landlord`
+
+### `GET /api/v1/landlord/calendar`
+
+Protected: `landlord`
+
+Calendar item shape:
+
+```json
+{
+  "id": "77777777-7777-7777-7777-777777777777",
+  "userId": "b51dfdb8-0fd9-4438-a4ae-1d69ac6e2ab8",
+  "propertyId": "03e8c35e-f352-4771-a155-7a9a7a5615f5",
+  "unitId": "11111111-1111-1111-1111-111111111111",
+  "eventType": "rent_followup",
+  "title": "Palm Residence A1",
+  "startsAt": "2026-04-08T09:00:00Z",
+  "endsAt": "2026-04-08T10:00:00Z",
+  "status": "scheduled",
+  "metadataJson": {
+    "label": "N850,000"
+  },
+  "createdAt": "2026-04-06T09:22:00Z"
+}
+```
+
+## Admin
+
+### `GET /api/v1/admin/metrics/overview`
+
+Protected: `admin`
+
+Success `200`:
+
+```json
+{
+  "totalProperties": 2,
+  "activeUsers": 4,
+  "monthlyRevenue": 850000,
+  "openDisputes": 1
+}
+```
+
+### `GET /api/v1/admin/verifications`
+
+Protected: `admin`
+
+Returns verification queue items:
+
+```json
+{
+  "id": "df9b1e9c-4ef8-47f1-8d77-c9ac75e520a8",
+  "userId": "0bf4f4d5-48a9-4b7b-aaf4-77e805fc2902",
+  "userEmail": "agent@example.com",
+  "userRole": "agent",
+  "status": "submitted",
+  "submittedAt": "2026-04-06T09:05:00Z",
+  "reviewedAt": null,
+  "rejectionReason": null,
+  "notes": "Agent KYC submitted",
+  "createdAt": "2026-04-06T09:05:00Z",
+  "updatedAt": "2026-04-06T09:05:00Z"
+}
+```
+
+### `PATCH /api/v1/admin/verifications/{id}`
+
+Protected: `admin`
+
+Request:
+
+```json
+{
+  "verification_status": "verified",
+  "verification_notes": "Approved by admin"
 }
 ```
 
 Notes:
 
-- `desired_features` must not be empty
-- `max_budget` must be greater than or equal to `min_budget`
-- `bedrooms` must be `0` or greater
+- compatibility mapping is applied:
+  - `verified` -> verification record becomes `approved`
+  - user record becomes legacy `verified`
+  - KYC status email is sent
 
-Success `201`:
+## Legacy Routes Still Available
 
-```json
-{
-  "id": "d5b71ee7-7374-4393-92ad-d2f49ff2d637"
-}
-```
+The backend still exposes older non-prefixed routes used by the earlier backend surface. These remain available for backward compatibility:
 
-Possible errors:
+- `/health`
+- `/auth/register`
+- `/auth/login`
+- `/auth/verify-email`
+- `/dashboard`
+- `/properties`
+- `/posts`
+- `/posts/{id}/respond`
+- `/responses/{id}/thread`
+- `/responses/{id}/live-video-sessions`
+- `/responses/{id}/site-visits`
+- `/reviews`
+- `/reports`
+- `/admin/reports/{id}/decision`
 
-- `400` invalid body
-- `401` missing or invalid token
+## Verification Status Notes
 
-## 9. List Posts
+Two verification representations currently coexist:
 
-`GET /posts?page=1&per_page=10&property_type=service_apartment&city=Abuja&state=FCT&min_budget=3000000&max_budget=6000000`
+- compatibility verification records:
+  - `not_started`
+  - `submitted`
+  - `in_review`
+  - `approved`
+  - `rejected`
+  - `expired`
+- legacy user listing verification:
+  - `not_required`
+  - `pending`
+  - `verified`
+  - `rejected`
 
-Query params:
-
-- `page`
-- `per_page`
-- `location`
-- `property_type`
-- `city`
-- `state`
-- `min_budget`
-- `max_budget`
-
-Success `200`:
-
-```json
-[
-  {
-    "id": "66f0008d-dfc7-4c9d-82b1-bedcb959c57a",
-    "author_id": "efbf841d-373f-4853-b950-7c3c00db6b54",
-    "author_name": "Buyer Three",
-    "author_role": "buyer",
-    "location": "Wuse 2, Abuja",
-    "request_title": "Need serviced apartment in Wuse 2",
-    "area": "Wuse 2",
-    "city": "Abuja",
-    "state": "FCT",
-    "property_type": "service_apartment",
-    "bedrooms": 2,
-    "min_budget": 3500000,
-    "max_budget": 5000000,
-    "pricing_preference": "monthly",
-    "desired_features": [
-      "gym",
-      "24/7 power",
-      "parking"
-    ],
-    "status": "active",
-    "description": "Looking for a serviced apartment close to business district",
-    "response_count": 1,
-    "created_at": "2026-03-28T12:39:20.370277Z"
-  }
-]
-```
-
-Possible errors:
-
-- `400` invalid pagination
-
-## 10. Respond To Post
-
-`POST /posts/{id}/respond`
-
-Protected:
-
-- `buyer`
-- `agent`
-- `landlord`
-
-Request body:
-
-```json
-{
-  "message": "I have a serviced apartment that matches your request.",
-  "property_ids": [
-    "c34a4043-fafc-4527-ad8c-623b13e6f80a"
-  ]
-}
-```
-
-Rules:
-
-- `property_ids` may be empty
-- when `property_ids` are provided, the responder must own or manage those properties on the platform
-
-Success `201`:
-
-```json
-{
-  "id": "38d4554e-76aa-4329-8ede-48d6e3523225",
-  "post_id": "66f0008d-dfc7-4c9d-82b1-bedcb959c57a",
-  "responder_id": "11f32bdb-4b5a-423e-8bea-f8704b99c862",
-  "message": "I have a serviced apartment that matches your request.",
-  "properties": [
-    {
-      "id": "c34a4043-fafc-4527-ad8c-623b13e6f80a",
-      "title": "Serviced 2BR Apartment",
-      "price": 4200000,
-      "location": "Wuse 2, Abuja",
-      "description": "Serviced apartment with gym and power",
-      "images": [
-        "https://img.example/p1.jpg"
-      ],
-      "is_service_apartment": true,
-      "owner_id": "11f32bdb-4b5a-423e-8bea-f8704b99c862",
-      "agent_id": "11f32bdb-4b5a-423e-8bea-f8704b99c862",
-      "owner_name": "Agent Three",
-      "agent_name": "Agent Three",
-      "created_at": "2026-03-28T12:39:20.235733Z"
-    }
-  ],
-  "created_at": "2026-03-28T12:39:21.017164Z"
-}
-```
-
-## 11. Update Agent Notification Settings
-
-`PATCH /agents/me/notification-settings`
-
-Protected:
-
-- `agent`
-
-Request body:
-
-```json
-{
-  "notifications_enabled": true,
-  "operating_city": "Lagos",
-  "operating_state": "Lagos"
-}
-```
-
-Rules:
-
-- if `notifications_enabled` is `true`, both `operating_city` and `operating_state` are required
-- matching is done against new post `city` or `state`
-
-Success `200`:
-
-```json
-{
-  "notifications_enabled": true,
-  "operating_city": "Lagos",
-  "operating_state": "Lagos"
-}
-```
-
-## 12. Agent Post Alerts
-
-`GET /agents/me/post-alerts`
-
-Protected:
-
-- `agent`
-
-Success `200`:
-
-```json
-[
-  {
-    "notification_id": "uuid",
-    "post_id": "uuid",
-    "author_id": "uuid",
-    "author_name": "Buyer One",
-    "author_role": "buyer",
-    "location": "Wuse 2, Abuja",
-    "request_title": "Need serviced apartment in Wuse 2",
-    "area": "Wuse 2",
-    "city": "Abuja",
-    "state": "FCT",
-    "property_type": "service_apartment",
-    "bedrooms": 2,
-    "min_budget": 3500000,
-    "max_budget": 5000000,
-    "pricing_preference": "monthly",
-    "desired_features": ["gym", "24/7 power", "parking"],
-    "status": "active",
-    "description": "Looking for a serviced apartment close to business district",
-    "matched_city": "Abuja",
-    "matched_state": "FCT",
-    "is_read": false,
-    "created_at": "2026-03-28T08:00:00Z"
-  }
-]
-```
-
-## 13. Role Dashboard
-
-`GET /dashboard`
-
-Protected:
-
-- `buyer`
-- `agent`
-- `landlord`
-
-Buyer success `200`:
-
-```json
-{
-  "role": "buyer",
-  "profile": {
-    "id": "uuid",
-    "full_name": "Buyer One",
-    "email": "buyer@example.com",
-    "role": "buyer",
-    "bio": "Buyer",
-    "created_at": "2026-03-28T08:00:00Z"
-  },
-  "buyer": {
-    "active_requests": [
-      {
-        "request": {
-          "id": "uuid",
-          "author_id": "uuid",
-          "author_name": "Buyer One",
-          "author_role": "buyer",
-          "location": "Wuse 2, Abuja",
-          "request_title": "Need serviced apartment in Wuse 2",
-          "area": "Wuse 2",
-          "city": "Abuja",
-          "state": "FCT",
-          "property_type": "service_apartment",
-          "bedrooms": 2,
-          "min_budget": 3500000,
-          "max_budget": 5000000,
-          "pricing_preference": "monthly",
-          "desired_features": ["gym", "24/7 power", "parking"],
-          "status": "active",
-          "description": "Looking for a serviced apartment",
-          "response_count": 1,
-          "created_at": "2026-03-28T08:00:00Z"
-        },
-        "responses": [
-          {
-            "response_id": "uuid",
-            "responder_id": "uuid",
-            "responder_name": "Agent One",
-            "responder_role": "agent",
-            "message": "I have a serviced apartment that matches your request.",
-            "properties": [],
-            "created_at": "2026-03-28T08:00:00Z"
-          }
-        ]
-      }
-    ]
-  },
-  "agent": null,
-  "landlord": null
-}
-```
-
-Agent success `200`:
-
-```json
-{
-  "role": "agent",
-  "profile": {
-    "id": "uuid",
-    "full_name": "Agent One",
-    "email": "agent@example.com",
-    "role": "agent",
-    "bio": "Licensed agent",
-    "created_at": "2026-03-28T08:00:00Z"
-  },
-  "buyer": null,
-  "agent": {
-    "managed_properties": [],
-    "service_apartments": [],
-    "unread_post_alerts": []
-  },
-  "landlord": null
-}
-```
-
-Landlord success `200`:
-
-```json
-{
-  "role": "landlord",
-  "profile": {
-    "id": "uuid",
-    "full_name": "Landlord One",
-    "email": "landlord@example.com",
-    "role": "landlord",
-    "bio": "Owner",
-    "created_at": "2026-03-28T08:00:00Z"
-  },
-  "buyer": null,
-  "agent": null,
-  "landlord": {
-    "owned_properties": []
-  }
-}
-```
-
-Possible errors:
-
-- `400` missing message
-- `401` missing or invalid token
-- `404` post not found
-
-## Frontend Field Summary
-
-### Auth user object
-
-```json
-{
-  "id": "uuid",
-  "full_name": "string",
-  "email": "string",
-  "role": "buyer | agent | landlord",
-  "bio": "string | null",
-  "created_at": "ISO datetime"
-}
-```
-
-### Agent list item
-
-```json
-{
-  "id": "uuid",
-  "full_name": "string",
-  "email": "string",
-  "bio": "string | null",
-  "created_at": "ISO datetime"
-}
-```
-
-### Property list item
-
-```json
-{
-  "id": "uuid",
-  "title": "string",
-  "price": 0,
-  "location": "string",
-  "description": "string",
-  "images": ["string"],
-  "is_service_apartment": true,
-  "owner_id": "uuid",
-  "agent_id": "uuid | null",
-  "owner_name": "string",
-  "agent_name": "string | null",
-  "created_at": "ISO datetime"
-}
-```
-
-### Property detail
-
-```json
-{
-  "id": "uuid",
-  "title": "string",
-  "price": 0,
-  "location": "string",
-  "description": "string",
-  "images": ["string"],
-  "is_service_apartment": true,
-  "owner_id": "uuid",
-  "agent_id": "uuid | null",
-  "owner_name": "string",
-  "agent_name": "string | null",
-  "exact_address": "string | null",
-  "contact_name": "string | null",
-  "contact_phone": "string | null",
-  "created_at": "ISO datetime",
-  "updated_at": "ISO datetime"
-}
-```
-
-### Post list item
-
-```json
-{
-  "id": "uuid",
-  "author_id": "uuid",
-  "author_name": "string",
-  "author_role": "buyer | agent | landlord",
-  "location": "string",
-  "request_title": "string",
-  "area": "string",
-  "city": "string",
-  "state": "string",
-  "property_type": "string",
-  "bedrooms": 0,
-  "min_budget": 0,
-  "max_budget": 0,
-  "pricing_preference": "string",
-  "desired_features": ["string"],
-  "status": "active | closed | fulfilled",
-  "description": "string",
-  "response_count": 0,
-  "created_at": "ISO datetime"
-}
-```
-
-### Response created
-
-```json
-{
-  "id": "uuid",
-  "post_id": "uuid",
-  "responder_id": "uuid",
-  "message": "string",
-  "properties": [
-    {
-      "id": "uuid"
-    }
-  ],
-  "created_at": "ISO datetime"
-}
-```
+The `/api/v1/admin/verifications/{id}` endpoint maps between them automatically.
