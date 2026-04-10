@@ -28,7 +28,6 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "target/release/realestate"
           target: "/root/app/releases/"
-          strip_components: 2
 
       - name: Activate release
         uses: appleboy/ssh-action@v1.0.3
@@ -48,3 +47,8 @@ jobs:
             systemctl restart myapp
             sleep 2
             systemctl status myapp --no-pager
+
+      - name: Verify binary exists
+        run: |
+             ls -lah target/release/
+              file target/release/realestate
