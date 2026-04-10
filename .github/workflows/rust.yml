@@ -57,7 +57,7 @@ jobs:
 
             mv /root/app/releases/realestate "$NEW"
 
-            ln -sfn "$NEW" /root/app/current"
+            ln -sfn "$NEW" /root/app/current
 
             chmod +x "$NEW"
 
