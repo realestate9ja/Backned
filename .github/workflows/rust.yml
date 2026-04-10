@@ -27,13 +27,24 @@ jobs:
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "target/release/realestate"
-          target: "/root/app"
+          target: "/root/app/releases/"
+          strip_components: 2
 
-      - name: Restart app
+      - name: Activate release
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: 68.183.127.248
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            set -e
+
+            chmod +x /root/app/releases/realestate
+
+            mv /root/app/releases/realestate /root/app/releases/realestate_${{ github.sha}}
+
+            ln -sfn /root/app/releases/realestate_${{ github.sha}} /root/app/current
+
             systemctl restart myapp
+            sleep 2
+            systemctl status myapp --no-pager
