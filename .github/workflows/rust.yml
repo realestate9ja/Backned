@@ -17,18 +17,33 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build
+      - name: Build release binary
         run: cargo build --release
 
-      - name: Copy binary to server
+      # ✅ HARD VALIDATION (prevents your previous "0 byte binary" disaster)
+      - name: Validate binary
+        run: |
+          ls -lah target/release/
+          test -s target/release/realestate
+          file target/release/realestate
+
+      # ✅ Normalize artifact (removes path ambiguity)
+      - name: Prepare deploy artifact
+        run: |
+          cp target/release/realestate realestate
+          chmod +x realestate
+
+      # 🚀 Upload ONLY final binary
+      - name: Upload binary to server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: 68.183.127.248
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "target/release/realestate"
+          source: "realestate"
           target: "/root/app/releases/"
 
+      # 🚀 Activate release (safe atomic switch)
       - name: Activate release
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -38,17 +53,14 @@ jobs:
           script: |
             set -e
 
-            chmod +x /root/app/releases/realestate
+            NEW="/root/app/releases/realestate_${GITHUB_SHA}"
 
-            mv /root/app/releases/realestate /root/app/releases/realestate_${{ github.sha}}
+            mv /root/app/releases/realestate "$NEW"
 
-            ln -sfn /root/app/releases/realestate_${{ github.sha}} /root/app/current
+            ln -sfn "$NEW" /root/app/current"
+
+            chmod +x "$NEW"
 
             systemctl restart myapp
             sleep 2
-            systemctl status myapp --no-pager
-
-      - name: Verify binary exists
-        run: |
-             ls -lah target/release/
-              file target/release/realestate
+            systemctl --no-pager status myapp
