@@ -94,13 +94,24 @@
 
               # restart service
               systemctl restart myapp
-              sleep 3
 
-              # health check gate
+              # wait until systemcd says its running
+              sleep 2
+              systemctl is-active --quiet myapp || {
+              echo "❌ service failed to start"
+              journalctl -u myapp --no-pager -n 50
+              exit 1
+              }
+
+              # retry health check
+              for i in {1..10}; do
               if curl -fs http://127.0.0.1:3000/health > /dev/null; then
                 echo "✅ deploy successful"
                 exit 0
-              else
+              fi
+                sleep 2
+              done
+
                 echo "❌ health check failed — rolling back"
 
                 if [ -L ${APP_ROOT}/previous ]; then
@@ -109,4 +120,3 @@
                 fi
 
                 exit 1
-              fi
