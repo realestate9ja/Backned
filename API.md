@@ -47,7 +47,6 @@ Request:
   "full_name": "Seeker One",
   "email": "seeker@example.com",
   "password": "StrongPass123",
-  "role": "seeker",
   "phone": "+2348010000000",
   "bio": "Optional bio"
 }
@@ -64,7 +63,7 @@ Success `201`:
     "full_name": "Seeker One",
     "email": "seeker@example.com",
     "email_verified": false,
-    "role": "seeker",
+    "role": "unassigned",
     "bio": "Optional bio",
     "average_rating": null,
     "review_count": 0,
@@ -73,6 +72,11 @@ Success `201`:
   }
 }
 ```
+
+Notes:
+
+- `/api/v1/auth/register` creates an `unassigned` account
+- role assignment happens at `POST /api/v1/onboarding/role`
 
 ### `POST /api/v1/auth/login`
 
@@ -109,6 +113,40 @@ Success `200`:
   "created_at": "2026-04-06T09:00:00Z"
 }
 ```
+
+### `POST /api/v1/auth/send-email-code`
+
+Request:
+
+```json
+{
+  "email": "seeker@example.com",
+  "purpose": "signup"
+}
+```
+
+Success `200`:
+
+```json
+{
+  "ok": true,
+  "expires_in_seconds": 600,
+  "code_length": 6
+}
+```
+
+### `POST /api/v1/auth/verify-email-code`
+
+Request:
+
+```json
+{
+  "email": "seeker@example.com",
+  "code": "123456"
+}
+```
+
+Success `200`: returns the verified user shape.
 
 ### `POST /api/v1/auth/refresh`
 
@@ -170,6 +208,29 @@ Success `200`:
 ```
 
 ## Onboarding
+
+### `POST /api/v1/onboarding/role`
+
+Protected.
+
+Request:
+
+```json
+{
+  "role": "seeker"
+}
+```
+
+Allowed values:
+
+- `seeker`
+- `agent`
+- `landlord`
+
+Notes:
+
+- only available while the user role is `unassigned`
+- role can only be selected once
 
 ### `PUT /api/v1/onboarding/profile`
 
@@ -355,6 +416,12 @@ Protected: `agent`
 
 Returns the agent’s owned or managed properties.
 
+### `PATCH /api/v1/agent/properties/{id}`
+
+Protected: `agent`
+
+Updates an owned or managed property.
+
 ## Seeker Needs
 
 ### `POST /api/v1/seeker/needs`
@@ -419,6 +486,17 @@ Success item shape:
   "urgency": null
 }
 ```
+
+### `GET /api/v1/agent/leads/{id}`
+
+Protected: `agent`
+
+Returns:
+
+- `lead`
+- `seekerNeed`
+- `matchedProperties`
+- `existingOffer`
 
 ## Offers
 
@@ -496,9 +574,59 @@ Protected: `seeker`
 
 Protected: `agent`
 
+### `GET /api/v1/agent/payouts`
+
+Protected: `agent`
+
+### `GET /api/v1/agent/calendar`
+
+Protected: `agent`
+
+### `GET /api/v1/seeker/dashboard/overview`
+
+Protected: `seeker`
+
+Returns:
+
+- `stats`
+- `matchTrends`
+- `savedProperties`
+- `recentOffers`
+
+### `GET /api/v1/agent/dashboard/overview`
+
+Protected: `agent`
+
+Returns:
+
+- `stats`
+- `earningsSeries`
+- `topListings`
+- `recentLeads`
+
 ## Landlord
 
+### `GET /api/v1/landlord/dashboard/overview`
+
+Protected: `landlord`
+
+Returns:
+
+- `stats`
+- `occupancySeries`
+- `collectionSeries`
+- `leaseExpiries`
+- `maintenanceQueue`
+
+### `POST /api/v1/landlord/properties`
+
+Protected: `landlord`
+
 ### `GET /api/v1/landlord/properties`
+
+Protected: `landlord`
+
+### `POST /api/v1/landlord/units`
 
 Protected: `landlord`
 
@@ -537,6 +665,10 @@ Protected: `landlord`
 Protected: `landlord`
 
 ### `GET /api/v1/landlord/maintenance`
+
+Protected: `landlord`
+
+### `POST /api/v1/landlord/maintenance`
 
 Protected: `landlord`
 
@@ -581,6 +713,34 @@ Success `200`:
 }
 ```
 
+### `GET /api/v1/admin/users`
+
+Protected: `admin`
+
+### `GET /api/v1/admin/properties`
+
+Protected: `admin`
+
+### `GET /api/v1/admin/transactions`
+
+Protected: `admin`
+
+### `GET /api/v1/admin/disputes`
+
+Protected: `admin`
+
+### `GET /api/v1/admin/reports`
+
+Protected: `admin`
+
+### `GET /api/v1/admin/announcements`
+
+Protected: `admin`
+
+### `POST /api/v1/admin/announcements`
+
+Protected: `admin`
+
 ### `GET /api/v1/admin/verifications`
 
 Protected: `admin`
@@ -622,6 +782,38 @@ Notes:
   - `verified` -> verification record becomes `approved`
   - user record becomes legacy `verified`
   - KYC status email is sent
+
+## Notifications
+
+### `GET /api/v1/notifications`
+
+Protected.
+
+### `PATCH /api/v1/notifications/read-all`
+
+Protected.
+
+### `PATCH /api/v1/notifications/{id}/read`
+
+Protected.
+
+### `DELETE /api/v1/notifications/{id}`
+
+Protected.
+
+## Uploads
+
+### `POST /api/v1/uploads/presign`
+
+Request:
+
+```json
+{
+  "category": "property-media",
+  "filename": "front.jpg",
+  "contentType": "image/jpeg"
+}
+```
 
 ## Legacy Routes Still Available
 

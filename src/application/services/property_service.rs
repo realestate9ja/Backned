@@ -99,6 +99,7 @@ impl PropertyService {
                     )
                 }
             }
+            UserRole::Unassigned => (None, false, None, crate::domain::properties::PropertyStatus::Draft),
             UserRole::Seeker => (None, false, None, crate::domain::properties::PropertyStatus::Draft),
             UserRole::Admin => (None, false, None, crate::domain::properties::PropertyStatus::Draft),
         };
@@ -188,7 +189,7 @@ impl PropertyService {
 
             let visibility = match user.role {
                 UserRole::Agent | UserRole::Landlord | UserRole::Admin => "privileged",
-                UserRole::Seeker => "restricted",
+                UserRole::Unassigned | UserRole::Seeker => "restricted",
             };
             let cache_key = self
                 .cache

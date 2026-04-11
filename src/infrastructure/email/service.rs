@@ -140,6 +140,17 @@ impl MailService {
         }
     }
 
+    pub fn verification_code_email(&self, to: String, full_name: &str, code: &str) -> OutboundEmail {
+        OutboundEmail {
+            to,
+            subject: "Your VeriNest verification code".to_string(),
+            text: format!("Hello {full_name}, your VeriNest verification code is {code}."),
+            html: format!(
+                "<p>Hello {full_name},</p><p>Your VeriNest verification code is <strong>{code}</strong>.</p>"
+            ),
+        }
+    }
+
     pub fn kyc_status_email(
         &self,
         to: String,

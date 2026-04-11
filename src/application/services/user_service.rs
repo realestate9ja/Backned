@@ -178,6 +178,13 @@ impl UserService {
         profile.review_count = summary.review_count;
 
         let response = match actor.role {
+            UserRole::Unassigned => DashboardResponse {
+                role: actor.role,
+                profile,
+                seeker: None,
+                agent: None,
+                landlord: None,
+            },
             UserRole::Seeker => {
                 let active_requests = self.posts.list_active_by_author(actor.id, 10).await?;
                 let active_requests = futures_from_requests(&self.responses, active_requests).await?;

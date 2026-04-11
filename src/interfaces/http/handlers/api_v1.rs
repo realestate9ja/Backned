@@ -6,14 +6,17 @@ use axum::{
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sqlx::{FromRow, PgPool};
+use sqlx::{FromRow, PgPool, Row};
 use uuid::Uuid;
 
 use crate::{
     domain::{
         posts::{CreatePostInput, PostListItem, PostQuery},
         properties::{PropertyListItem, PropertyQuery},
-        users::{AuthResponse, UpdateAgentVerificationInput, User, UserPublicView, UserRole},
+        users::{
+            AuthResponse, RegisterUserInput, SendEmailCodeInput, UpdateAgentVerificationInput, User,
+            UserPublicView, UserRole, VerifyEmailCodeInput,
+        },
     },
     interfaces::http::{
         errors::AppError,
@@ -29,9 +32,23 @@ pub struct RefreshTokenPayload {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ApiRegisterInput {
+    pub full_name: String,
+    pub email: String,
+    pub password: String,
+    pub phone: Option<String>,
+    pub bio: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SelectRoleInput {
+    pub role: UserRole,
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OnboardingProfileInput {
-    pub role: UserRole,
+    pub role: Option<UserRole>,
     pub phone: Option<String>,
     pub city: Option<String>,
     pub avatar_url: Option<String>,
@@ -93,6 +110,62 @@ pub struct CreateBookingInput {
     pub booking_type: String,
     pub scheduled_for: DateTime<Utc>,
     pub notes: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UploadPresignInput {
+    pub category: String,
+    pub filename: String,
+    pub content_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAgentPropertyInput {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub price: Option<i64>,
+    pub location: Option<String>,
+    pub exact_address: Option<String>,
+    pub images: Option<Vec<String>>,
+    pub contact_name: Option<String>,
+    pub contact_phone: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateUnitInput {
+    pub property_id: Uuid,
+    pub unit_code: String,
+    pub name: String,
+    pub unit_type: Option<String>,
+    pub bedrooms_label: Option<String>,
+    pub rent_amount: Option<i64>,
+    pub rent_currency: Option<String>,
+    pub rent_period: Option<String>,
+    pub occupancy_status: Option<String>,
+    pub listing_status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateMaintenanceRequestInput {
+    pub property_id: Uuid,
+    pub unit_id: Option<Uuid>,
+    pub title: String,
+    pub description: String,
+    pub severity: String,
+    pub scheduled_for: Option<DateTime<Utc>>,
+    pub estimated_cost: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateAnnouncementInput {
+    pub title: String,
+    pub body: String,
+    pub audience: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -334,6 +407,38 @@ pub struct AdminVerificationQueueItem {
     pub updated_at: DateTime<Utc>,
 }
 
+pub async fn register(
+    State(state): State<AppState>,
+    Json(payload): Json<ApiRegisterInput>,
+) -> Result<(StatusCode, Json<AuthResponse>), AppError> {
+    let response = state
+        .auth_use_cases
+        .register(RegisterUserInput {
+            full_name: payload.full_name,
+            email: payload.email,
+            password: payload.password,
+            role: UserRole::Unassigned,
+            phone: payload.phone,
+            bio: payload.bio,
+        })
+        .await?;
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
+pub async fn send_email_code(
+    State(state): State<AppState>,
+    Json(payload): Json<SendEmailCodeInput>,
+) -> Result<Json<crate::application::services::ValueAck>, AppError> {
+    Ok(Json(state.auth_use_cases.send_email_code(payload).await?))
+}
+
+pub async fn verify_email_code(
+    State(state): State<AppState>,
+    Json(payload): Json<VerifyEmailCodeInput>,
+) -> Result<Json<UserPublicView>, AppError> {
+    Ok(Json(state.auth_use_cases.verify_email_code(payload).await?))
+}
+
 pub async fn me(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
@@ -343,6 +448,35 @@ pub async fn me(
     let verification = fetch_latest_verification(&state.pool, user.id).await?;
     Ok(Json(AuthMeResponse {
         user: UserPublicView::from(user),
+        profile,
+        role_profile,
+        verification,
+    }))
+}
+
+pub async fn select_onboarding_role(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Json(payload): Json<SelectRoleInput>,
+) -> Result<Json<AuthMeResponse>, AppError> {
+    if user.role != UserRole::Unassigned {
+        return Err(AppError::forbidden("role has already been assigned"));
+    }
+    if !matches!(payload.role, UserRole::Seeker | UserRole::Agent | UserRole::Landlord) {
+        return Err(AppError::bad_request("invalid onboarding role"));
+    }
+
+    let updated = state
+        .user_repository
+        .update_role(user.id, payload.role)
+        .await?
+        .ok_or_else(|| AppError::not_found("user not found"))?;
+    let profile = fetch_profile(&state.pool, user.id).await?;
+    let role_profile = fetch_role_profile(&state.pool, &updated).await?;
+    let verification = fetch_latest_verification(&state.pool, user.id).await?;
+
+    Ok(Json(AuthMeResponse {
+        user: UserPublicView::from(updated),
         profile,
         role_profile,
         verification,
@@ -370,7 +504,9 @@ pub async fn upsert_onboarding_profile(
     AuthUser(user): AuthUser,
     Json(payload): Json<OnboardingProfileInput>,
 ) -> Result<Json<AuthMeResponse>, AppError> {
-    if payload.role != user.role {
+    if let Some(role) = payload.role
+        && role != user.role
+    {
         return Err(AppError::forbidden("role mismatch"));
     }
     sqlx::query(
@@ -474,7 +610,7 @@ pub async fn upsert_onboarding_profile(
             .execute(&state.pool)
             .await?;
         }
-        UserRole::Admin => {}
+        UserRole::Admin | UserRole::Unassigned => {}
     }
 
     let refreshed_user = state
@@ -1212,6 +1348,593 @@ pub async fn admin_update_verification(
     Ok(Json(verification))
 }
 
+pub async fn seeker_dashboard_overview(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<Value>, AppError> {
+    if user.role != UserRole::Seeker {
+        return Err(AppError::forbidden("only seekers can view seeker dashboard"));
+    }
+    let need_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM posts WHERE author_id = $1")
+            .bind(user.id)
+            .fetch_one(&state.pool)
+            .await?;
+    let saved_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM saved_properties WHERE user_id = $1")
+            .bind(user.id)
+            .fetch_one(&state.pool)
+            .await?;
+    let booking_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM bookings WHERE seeker_user_id = $1")
+            .bind(user.id)
+            .fetch_one(&state.pool)
+            .await?;
+    let recent_offers = list_seeker_offers(State(state.clone()), AuthUser(user.clone()))
+        .await?
+        .0;
+    let saved_properties = list_saved_properties(State(state.clone()), AuthUser(user.clone()))
+        .await?
+        .0;
+
+    Ok(Json(json!({
+        "stats": {
+            "needCount": need_count,
+            "savedCount": saved_count,
+            "bookingCount": booking_count
+        },
+        "matchTrends": [],
+        "savedProperties": saved_properties,
+        "recentOffers": recent_offers
+    })))
+}
+
+pub async fn agent_dashboard_overview(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<Value>, AppError> {
+    if user.role != UserRole::Agent {
+        return Err(AppError::forbidden("only agents can view agent dashboard"));
+    }
+    let listing_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM properties WHERE owner_id = $1 OR agent_id = $1",
+    )
+    .bind(user.id)
+    .fetch_one(&state.pool)
+    .await?;
+    let lead_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM agent_post_notifications WHERE agent_id = $1",
+    )
+    .bind(user.id)
+    .fetch_one(&state.pool)
+    .await?;
+    let payout_total = sqlx::query_scalar::<_, Option<i64>>(
+        "SELECT COALESCE(SUM(amount), 0)::bigint FROM payouts WHERE recipient_user_id = $1 AND recipient_role = 'agent'",
+    )
+    .bind(user.id)
+    .fetch_one(&state.pool)
+    .await?
+    .unwrap_or(0);
+    let top_listings = list_agent_properties(State(state.clone()), AuthUser(user.clone())).await?.0;
+    let recent_leads = list_agent_leads(State(state), AuthUser(user)).await?.0;
+
+    Ok(Json(json!({
+        "stats": {
+            "listingCount": listing_count,
+            "leadCount": lead_count,
+            "payoutTotal": payout_total
+        },
+        "earningsSeries": [],
+        "topListings": top_listings,
+        "recentLeads": recent_leads
+    })))
+}
+
+pub async fn landlord_dashboard_overview(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<Value>, AppError> {
+    ensure_landlord(&user)?;
+    let property_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM properties WHERE owner_id = $1",
+    )
+    .bind(user.id)
+    .fetch_one(&state.pool)
+    .await?;
+    let unit_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM units u INNER JOIN properties p ON p.id = u.property_id WHERE p.owner_id = $1",
+    )
+    .bind(user.id)
+    .fetch_one(&state.pool)
+    .await?;
+    let open_maintenance = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM maintenance_requests WHERE landlord_user_id = $1 AND status IN ('open','assigned','in_progress')",
+    )
+    .bind(user.id)
+    .fetch_one(&state.pool)
+    .await?;
+    let maintenance_queue = list_landlord_maintenance(State(state.clone()), AuthUser(user.clone())).await?.0;
+
+    Ok(Json(json!({
+        "stats": {
+            "propertyCount": property_count,
+            "unitCount": unit_count,
+            "openMaintenance": open_maintenance
+        },
+        "occupancySeries": [],
+        "collectionSeries": [],
+        "leaseExpiries": [],
+        "maintenanceQueue": maintenance_queue
+    })))
+}
+
+pub async fn get_agent_lead_detail(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>, AppError> {
+    if user.role != UserRole::Agent {
+        return Err(AppError::forbidden("only agents can view leads"));
+    }
+    let lead = sqlx::query_as::<_, AgentLeadView>(
+        r#"
+        SELECT
+            COALESCE(lm.id, apn.id) AS id,
+            p.id AS need_post_id,
+            lm.matched_property_id,
+            COALESCE(lm.match_score, 0)::double precision AS match_score,
+            COALESCE(lm.status, CASE WHEN apn.is_read THEN 'viewed' ELSE 'new' END) AS status,
+            lm.sla_expires_at,
+            COALESCE(lm.created_at, apn.created_at) AS created_at,
+            COALESCE(lm.updated_at, apn.created_at) AS updated_at,
+            p.request_title,
+            p.location,
+            p.property_type,
+            NULL::text AS urgency
+        FROM agent_post_notifications apn
+        INNER JOIN posts p ON p.id = apn.post_id
+        LEFT JOIN lead_matches lm ON lm.agent_user_id = apn.agent_id AND lm.need_post_id = apn.post_id
+        WHERE apn.agent_id = $1 AND COALESCE(lm.id, apn.id) = $2
+        "#,
+    )
+    .bind(user.id)
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::not_found("lead not found"))?;
+
+    let need = sqlx::query(
+        r#"
+        SELECT to_jsonb(p) AS payload
+        FROM posts p
+        WHERE p.id = $1
+        "#,
+    )
+    .bind(lead.need_post_id)
+    .fetch_one(&state.pool)
+    .await?;
+    let matched_properties = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb)
+        FROM (
+            SELECT p.id, p.title, p.location, p.price, p.images
+            FROM properties p
+            WHERE (p.owner_id = $1 OR p.agent_id = $1)
+        ) x
+        "#,
+    )
+    .bind(user.id)
+    .fetch_one(&state.pool)
+    .await?;
+    let existing_offer = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT to_jsonb(o)
+        FROM offers o
+        WHERE o.provider_user_id = $1 AND o.need_post_id = $2
+        ORDER BY o.created_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(user.id)
+    .bind(lead.need_post_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .unwrap_or(Value::Null);
+
+    let need_payload: Value = need.try_get("payload").map_err(anyhow::Error::from)?;
+    Ok(Json(json!({
+        "lead": lead,
+        "seekerNeed": need_payload,
+        "matchedProperties": matched_properties,
+        "existingOffer": existing_offer
+    })))
+}
+
+pub async fn update_agent_property(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateAgentPropertyInput>,
+) -> Result<Json<Value>, AppError> {
+    if user.role != UserRole::Agent {
+        return Err(AppError::forbidden("only agents can update agent properties"));
+    }
+    let updated = sqlx::query(
+        r#"
+        UPDATE properties
+        SET title = COALESCE($3, title),
+            description = COALESCE($4, description),
+            price = COALESCE($5, price),
+            location = COALESCE($6, location),
+            exact_address = COALESCE($7, exact_address),
+            images = COALESCE($8, images),
+            contact_name = COALESCE($9, contact_name),
+            contact_phone = COALESCE($10, contact_phone),
+            updated_at = NOW()
+        WHERE id = $1 AND (owner_id = $2 OR agent_id = $2)
+        "#,
+    )
+    .bind(id)
+    .bind(user.id)
+    .bind(payload.title)
+    .bind(payload.description)
+    .bind(payload.price)
+    .bind(payload.location)
+    .bind(payload.exact_address)
+    .bind(payload.images)
+    .bind(payload.contact_name)
+    .bind(payload.contact_phone)
+    .execute(&state.pool)
+    .await?;
+    if updated.rows_affected() == 0 {
+        return Err(AppError::not_found("property not found"));
+    }
+    let detail = state.property_use_cases.get_by_id(id, Some(&user)).await?;
+    Ok(Json(json!(detail)))
+}
+
+pub async fn list_agent_payouts(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<Vec<PayoutView>>, AppError> {
+    if user.role != UserRole::Agent {
+        return Err(AppError::forbidden("only agents can view payouts"));
+    }
+    let items = sqlx::query_as::<_, PayoutView>(
+        r#"
+        SELECT id, recipient_user_id, recipient_role, transaction_id, amount, currency,
+               status, requested_at, paid_at, failure_reason
+        FROM payouts
+        WHERE recipient_user_id = $1 AND recipient_role = 'agent'
+        ORDER BY requested_at DESC
+        "#,
+    )
+    .bind(user.id)
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(items))
+}
+
+pub async fn list_agent_calendar(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<Vec<Value>>, AppError> {
+    if user.role != UserRole::Agent {
+        return Err(AppError::forbidden("only agents can view calendar"));
+    }
+    let events = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb)
+        FROM (
+            SELECT
+                b.id,
+                'booking'::text AS "eventType",
+                COALESCE(p.title, 'Booking') AS title,
+                b.scheduled_for AS "startsAt",
+                b.scheduled_for AS "endsAt",
+                b.status,
+                jsonb_build_object('bookingType', b.booking_type, 'propertyId', b.property_id) AS metadata
+            FROM bookings b
+            LEFT JOIN properties p ON p.id = b.property_id
+            WHERE b.provider_user_id = $1
+            ORDER BY b.scheduled_for ASC
+        ) x
+        "#,
+    )
+    .bind(user.id)
+    .fetch_one(&state.pool)
+    .await?;
+    let items: Vec<Value> = serde_json::from_value(events).map_err(anyhow::Error::from)?;
+    Ok(Json(items))
+}
+
+pub async fn create_landlord_property(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Json(payload): Json<crate::domain::properties::CreatePropertyInput>,
+) -> Result<(StatusCode, Json<Value>), AppError> {
+    ensure_landlord(&user)?;
+    let detail = state.property_use_cases.create(&user, payload).await?;
+    Ok((StatusCode::CREATED, Json(json!(detail))))
+}
+
+pub async fn create_landlord_unit(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Json(payload): Json<CreateUnitInput>,
+) -> Result<(StatusCode, Json<UnitView>), AppError> {
+    ensure_landlord(&user)?;
+    let owns_property = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM properties WHERE id = $1 AND owner_id = $2)",
+    )
+    .bind(payload.property_id)
+    .bind(user.id)
+    .fetch_one(&state.pool)
+    .await?;
+    if !owns_property {
+        return Err(AppError::forbidden("property does not belong to landlord"));
+    }
+    let unit = sqlx::query_as::<_, UnitView>(
+        r#"
+        INSERT INTO units (
+            id, property_id, unit_code, name, unit_type, bedrooms_label, rent_amount,
+            rent_currency, rent_period, occupancy_status, listing_status
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, 'NGN'), COALESCE($9, 'year'),
+                COALESCE($10, 'vacant'), COALESCE($11, 'unlisted'))
+        RETURNING id, property_id, unit_code, name, unit_type, bedrooms_label, rent_amount,
+                  rent_currency, rent_period, occupancy_status, listing_status, tenant_user_id,
+                  lease_id, created_at, updated_at
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(payload.property_id)
+    .bind(payload.unit_code)
+    .bind(payload.name)
+    .bind(payload.unit_type)
+    .bind(payload.bedrooms_label)
+    .bind(payload.rent_amount)
+    .bind(payload.rent_currency)
+    .bind(payload.rent_period)
+    .bind(payload.occupancy_status)
+    .bind(payload.listing_status)
+    .fetch_one(&state.pool)
+    .await?;
+    Ok((StatusCode::CREATED, Json(unit)))
+}
+
+pub async fn create_landlord_maintenance(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Json(payload): Json<CreateMaintenanceRequestInput>,
+) -> Result<(StatusCode, Json<MaintenanceView>), AppError> {
+    ensure_landlord(&user)?;
+    let owns_property = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM properties WHERE id = $1 AND owner_id = $2)",
+    )
+    .bind(payload.property_id)
+    .bind(user.id)
+    .fetch_one(&state.pool)
+    .await?;
+    if !owns_property {
+        return Err(AppError::forbidden("property does not belong to landlord"));
+    }
+    let item = sqlx::query_as::<_, MaintenanceView>(
+        r#"
+        INSERT INTO maintenance_requests (
+            id, property_id, unit_id, landlord_user_id, title, description, severity,
+            status, scheduled_for, estimated_cost, reported_by_user_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'open', $8, $9, $4)
+        RETURNING id, property_id, unit_id, tenant_user_id, landlord_user_id, title,
+                  description, severity, status, assigned_vendor_name, scheduled_for,
+                  estimated_cost, actual_cost, created_at, updated_at
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(payload.property_id)
+    .bind(payload.unit_id)
+    .bind(user.id)
+    .bind(payload.title)
+    .bind(payload.description)
+    .bind(payload.severity)
+    .bind(payload.scheduled_for)
+    .bind(payload.estimated_cost)
+    .fetch_one(&state.pool)
+    .await?;
+    Ok((StatusCode::CREATED, Json(item)))
+}
+
+pub async fn uploads_presign(
+    Json(payload): Json<UploadPresignInput>,
+) -> Result<Json<Value>, AppError> {
+    let file_key = format!("{}/{}-{}", payload.category, Uuid::new_v4(), payload.filename);
+    let file_url = format!("https://uploads.verinest.local/{}", file_key);
+    let upload_url = format!("https://uploads.verinest.local/presigned/{}", file_key);
+    Ok(Json(json!({
+        "uploadUrl": upload_url,
+        "fileUrl": file_url,
+        "fileKey": file_key,
+        "contentType": payload.content_type
+    })))
+}
+
+pub async fn list_admin_users(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<Value>, AppError> {
+    ensure_admin(&user)?;
+    let items = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb)
+        FROM (
+            SELECT id, full_name, email, role::text AS role, email_verified, verification_status, is_banned, created_at
+            FROM users
+            ORDER BY created_at DESC
+        ) x
+        "#,
+    )
+    .fetch_one(&state.pool)
+    .await?;
+    Ok(Json(items))
+}
+
+pub async fn list_admin_properties(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<Value>, AppError> {
+    ensure_admin(&user)?;
+    let items = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb)
+        FROM (
+            SELECT id, owner_id, agent_id, title, location, price, status::text AS status, created_at
+            FROM properties
+            ORDER BY created_at DESC
+        ) x
+        "#,
+    )
+    .fetch_one(&state.pool)
+    .await?;
+    Ok(Json(items))
+}
+
+pub async fn list_admin_transactions(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<Value>, AppError> {
+    ensure_admin(&user)?;
+    let items = sqlx::query_scalar::<_, Value>(
+        "SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) FROM (SELECT * FROM transactions ORDER BY created_at DESC) t",
+    )
+    .fetch_one(&state.pool)
+    .await?;
+    Ok(Json(items))
+}
+
+pub async fn list_admin_disputes(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<Value>, AppError> {
+    ensure_admin(&user)?;
+    let items = sqlx::query_scalar::<_, Value>(
+        "SELECT COALESCE(jsonb_agg(to_jsonb(d)), '[]'::jsonb) FROM (SELECT * FROM disputes ORDER BY created_at DESC) d",
+    )
+    .fetch_one(&state.pool)
+    .await?;
+    Ok(Json(items))
+}
+
+pub async fn list_admin_reports(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<Value>, AppError> {
+    ensure_admin(&user)?;
+    let items = sqlx::query_scalar::<_, Value>(
+        "SELECT COALESCE(jsonb_agg(to_jsonb(r)), '[]'::jsonb) FROM (SELECT * FROM reports ORDER BY created_at DESC) r",
+    )
+    .fetch_one(&state.pool)
+    .await?;
+    Ok(Json(items))
+}
+
+pub async fn list_admin_announcements(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<Value>, AppError> {
+    ensure_admin(&user)?;
+    let items = sqlx::query_scalar::<_, Value>(
+        "SELECT COALESCE(jsonb_agg(to_jsonb(a)), '[]'::jsonb) FROM (SELECT * FROM announcements ORDER BY created_at DESC) a",
+    )
+    .fetch_one(&state.pool)
+    .await?;
+    Ok(Json(items))
+}
+
+pub async fn create_admin_announcement(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Json(payload): Json<CreateAnnouncementInput>,
+) -> Result<(StatusCode, Json<Value>), AppError> {
+    ensure_admin(&user)?;
+    let item = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT to_jsonb(x)
+        FROM (
+            INSERT INTO announcements (id, title, body, audience, status, published_at, created_by)
+            VALUES ($1, $2, $3, $4, 'published', NOW(), $5)
+            RETURNING *
+        ) x
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(payload.title)
+    .bind(payload.body)
+    .bind(payload.audience)
+    .bind(user.id)
+    .fetch_one(&state.pool)
+    .await?;
+    Ok((StatusCode::CREATED, Json(item)))
+}
+
+pub async fn list_notifications(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<Value>, AppError> {
+    let items = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb)
+        FROM (
+            SELECT id, type AS kind, title, body, data_json->>'actionUrl' AS "actionUrl", read_at AS "readAt", created_at AS "createdAt"
+            FROM notifications
+            WHERE user_id = $1
+            ORDER BY created_at DESC
+        ) x
+        "#,
+    )
+    .bind(user.id)
+    .fetch_one(&state.pool)
+    .await?;
+    Ok(Json(items))
+}
+
+pub async fn notifications_read_all(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<Value>, AppError> {
+    sqlx::query("UPDATE notifications SET read_at = NOW() WHERE user_id = $1 AND read_at IS NULL")
+        .bind(user.id)
+        .execute(&state.pool)
+        .await?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+pub async fn notification_mark_read(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>, AppError> {
+    sqlx::query("UPDATE notifications SET read_at = NOW() WHERE id = $1 AND user_id = $2")
+        .bind(id)
+        .bind(user.id)
+        .execute(&state.pool)
+        .await?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+pub async fn notification_delete(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, AppError> {
+    sqlx::query("DELETE FROM notifications WHERE id = $1 AND user_id = $2")
+        .bind(id)
+        .bind(user.id)
+        .execute(&state.pool)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn fetch_profile(pool: &PgPool, user_id: Uuid) -> Result<Option<ProfileView>, AppError> {
     let profile = sqlx::query_as::<_, ProfileView>(
         r#"
@@ -1228,6 +1951,7 @@ async fn fetch_profile(pool: &PgPool, user_id: Uuid) -> Result<Option<ProfileVie
 
 async fn fetch_role_profile(pool: &PgPool, user: &User) -> Result<Option<Value>, AppError> {
     let value = match user.role {
+        UserRole::Unassigned => None,
         UserRole::Seeker => sqlx::query_scalar::<_, Value>(
             "SELECT to_jsonb(sp) FROM seeker_profiles sp WHERE sp.user_id = $1",
         )

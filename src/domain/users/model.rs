@@ -13,6 +13,7 @@ use crate::domain::{
 #[sqlx(type_name = "user_role", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum UserRole {
+    Unassigned,
     Seeker,
     Agent,
     Landlord,
@@ -30,6 +31,7 @@ impl UserRole {
 
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Unassigned => "unassigned",
             Self::Seeker => "seeker",
             Self::Agent => "agent",
             Self::Landlord => "landlord",
@@ -140,6 +142,18 @@ pub struct LoginInput {
 #[derive(Debug, Deserialize)]
 pub struct VerifyEmailInput {
     pub token: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SendEmailCodeInput {
+    pub email: String,
+    pub purpose: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VerifyEmailCodeInput {
+    pub email: String,
+    pub code: String,
 }
 
 #[derive(Debug, Serialize)]

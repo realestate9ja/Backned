@@ -90,7 +90,7 @@ pub fn create_router(state: AppState) -> Router {
 
 fn create_api_v1_router(state: AppState) -> Router<AppState> {
     Router::new()
-        .route("/auth/register", post(auth::register).route_layer(middleware::from_fn_with_state(
+        .route("/auth/register", post(api_v1::register).route_layer(middleware::from_fn_with_state(
             state.clone(),
             auth_rate_limit_middleware,
         )))
@@ -99,21 +99,36 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
             auth_rate_limit_middleware,
         )))
         .route("/auth/verify-email", get(auth::verify_email))
+        .route("/auth/send-email-code", post(api_v1::send_email_code).route_layer(
+            middleware::from_fn_with_state(state.clone(), auth_rate_limit_middleware),
+        ))
+        .route("/auth/verify-email-code", post(api_v1::verify_email_code).route_layer(
+            middleware::from_fn_with_state(state.clone(), auth_rate_limit_middleware),
+        ))
         .route("/auth/me", get(api_v1::me))
         .route("/auth/refresh", post(api_v1::refresh).route_layer(middleware::from_fn_with_state(
             state.clone(),
             auth_rate_limit_middleware,
         )))
         .route("/auth/logout", post(api_v1::logout))
+        .route("/onboarding/role", post(api_v1::select_onboarding_role))
         .route("/onboarding/profile", axum::routing::put(api_v1::upsert_onboarding_profile))
         .route("/verifications", post(api_v1::create_verification))
         .route("/verifications/me", get(api_v1::get_my_verification))
         .route("/verifications/{id}/documents", post(api_v1::create_verification_document))
+        .route("/uploads/presign", post(api_v1::uploads_presign))
         .route("/properties", get(api_v1::list_public_properties))
         .route("/properties/{id}", get(properties::get_property))
+        .route("/seeker/dashboard/overview", get(api_v1::seeker_dashboard_overview))
+        .route("/agent/dashboard/overview", get(api_v1::agent_dashboard_overview))
+        .route("/landlord/dashboard/overview", get(api_v1::landlord_dashboard_overview))
         .route("/agent/properties", post(properties::create_property).get(api_v1::list_agent_properties))
+        .route("/agent/properties/{id}", patch(api_v1::update_agent_property))
         .route("/seeker/needs", post(api_v1::create_seeker_need).get(api_v1::list_seeker_needs))
         .route("/agent/leads", get(api_v1::list_agent_leads))
+        .route("/agent/leads/{id}", get(api_v1::get_agent_lead_detail))
+        .route("/agent/payouts", get(api_v1::list_agent_payouts))
+        .route("/agent/calendar", get(api_v1::list_agent_calendar))
         .route("/offers", post(api_v1::create_offer))
         .route("/seeker/offers", get(api_v1::list_seeker_offers))
         .route("/seeker/saved-properties", post(api_v1::create_saved_property).get(api_v1::list_saved_properties))
@@ -121,14 +136,24 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
         .route("/bookings", post(api_v1::create_booking))
         .route("/seeker/bookings", get(api_v1::list_seeker_bookings))
         .route("/agent/bookings", get(api_v1::list_agent_bookings))
-        .route("/landlord/properties", get(api_v1::list_landlord_properties))
-        .route("/landlord/units", get(api_v1::list_landlord_units))
+        .route("/landlord/properties", post(api_v1::create_landlord_property).get(api_v1::list_landlord_properties))
+        .route("/landlord/units", post(api_v1::create_landlord_unit).get(api_v1::list_landlord_units))
         .route("/landlord/collections", get(api_v1::list_landlord_collections))
         .route("/landlord/payouts", get(api_v1::list_landlord_payouts))
-        .route("/landlord/maintenance", get(api_v1::list_landlord_maintenance))
+        .route("/landlord/maintenance", post(api_v1::create_landlord_maintenance).get(api_v1::list_landlord_maintenance))
         .route("/landlord/calendar", get(api_v1::list_landlord_calendar))
         .route("/admin/metrics/overview", get(api_v1::admin_metrics_overview))
+        .route("/admin/users", get(api_v1::list_admin_users))
+        .route("/admin/properties", get(api_v1::list_admin_properties))
+        .route("/admin/transactions", get(api_v1::list_admin_transactions))
+        .route("/admin/disputes", get(api_v1::list_admin_disputes))
+        .route("/admin/reports", get(api_v1::list_admin_reports))
+        .route("/admin/announcements", get(api_v1::list_admin_announcements).post(api_v1::create_admin_announcement))
         .route("/admin/verifications", get(api_v1::admin_list_verifications))
         .route("/admin/verifications/{id}", patch(api_v1::admin_update_verification))
+        .route("/notifications", get(api_v1::list_notifications))
+        .route("/notifications/read-all", patch(api_v1::notifications_read_all))
+        .route("/notifications/{id}/read", patch(api_v1::notification_mark_read))
+        .route("/notifications/{id}", axum::routing::delete(api_v1::notification_delete))
         .with_state(state)
 }

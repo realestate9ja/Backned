@@ -7,7 +7,7 @@ mod user_service;
 mod workflow_service;
 
 pub use audit_service::{AuditActor, AuditEvent, AuditService};
-pub use auth_service::AuthService;
+pub use auth_service::{AuthService, ValueAck};
 pub use post_service::PostService;
 pub use property_service::PropertyService;
 pub use trust_service::TrustService;

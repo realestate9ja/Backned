@@ -119,6 +119,35 @@ impl UserRepository {
         Ok(user)
     }
 
+    pub async fn update_role(&self, user_id: Uuid, role: UserRole) -> Result<Option<User>> {
+        let verification_status = if matches!(role, UserRole::Agent | UserRole::Landlord) {
+            "pending"
+        } else {
+            "not_required"
+        };
+        let user = sqlx::query_as::<_, User>(
+            r#"
+            UPDATE users
+            SET role = $2,
+                verification_status = $3,
+                updated_at = NOW()
+            WHERE id = $1
+            RETURNING id, full_name, email, email_verified, password_hash, role, phone, bio,
+                      notifications_enabled, operating_city, operating_state,
+                      verification_status, verification_notes, verified_at,
+                      quality_strikes, fraud_strikes, listing_restricted_until, is_banned,
+                      created_at, updated_at
+            "#,
+        )
+        .bind(user_id)
+        .bind(role)
+        .bind(verification_status)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(user)
+    }
+
     pub async fn list_agents(&self, limit: i64, offset: i64) -> Result<Vec<AgentProfile>> {
         let agents = sqlx::query_as::<_, AgentProfile>(
             r#"
@@ -324,6 +353,78 @@ impl UserRepository {
         .await?;
 
         Ok(token)
+    }
+
+    pub async fn create_email_verification_code(
+        &self,
+        user_id: Uuid,
+        email: &str,
+        purpose: &str,
+    ) -> Result<String> {
+        let value = format!("{:05}", rand::random::<u32>() % 100_000);
+        let expires_at = Utc::now() + Duration::minutes(10);
+        sqlx::query(
+            r#"
+            INSERT INTO email_verification_codes (id, user_id, email, purpose, code, expires_at)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            "#,
+        )
+        .bind(Uuid::new_v4())
+        .bind(user_id)
+        .bind(email.to_lowercase())
+        .bind(purpose.trim())
+        .bind(&value)
+        .bind(expires_at)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(value)
+    }
+
+    pub async fn find_by_email_verification_code(
+        &self,
+        email: &str,
+        code: &str,
+    ) -> Result<Option<User>> {
+        let user = sqlx::query_as::<_, User>(
+            r#"
+            SELECT u.id, u.full_name, u.email, u.email_verified, u.password_hash, u.role, u.phone, u.bio,
+                   u.notifications_enabled, u.operating_city, u.operating_state,
+                   u.verification_status, u.verification_notes, u.verified_at,
+                   u.quality_strikes, u.fraud_strikes, u.listing_restricted_until, u.is_banned,
+                   u.created_at, u.updated_at
+            FROM email_verification_codes evc
+            INNER JOIN users u ON u.id = evc.user_id
+            WHERE evc.email = $1
+              AND evc.code = $2
+              AND evc.used_at IS NULL
+              AND evc.expires_at > NOW()
+            ORDER BY evc.created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(email.to_lowercase())
+        .bind(code.trim())
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(user)
+    }
+
+    pub async fn mark_email_verification_code_used(&self, email: &str, code: &str) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE email_verification_codes
+            SET used_at = NOW()
+            WHERE email = $1 AND code = $2 AND used_at IS NULL
+            "#,
+        )
+        .bind(email.to_lowercase())
+        .bind(code.trim())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
     }
 
     pub async fn find_by_email_verification_token(&self, token: &str) -> Result<Option<User>> {

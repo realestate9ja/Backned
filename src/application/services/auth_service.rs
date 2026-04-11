@@ -1,7 +1,7 @@
 use crate::{
     domain::users::{
-        AuthResponse, BootstrapAdminInput, LoginInput, RegisterUserInput, UserPublicView, UserRepository,
-        UserRole, VerifyEmailInput,
+        AuthResponse, BootstrapAdminInput, LoginInput, RegisterUserInput, SendEmailCodeInput,
+        UserPublicView, UserRepository, UserRole, VerifyEmailCodeInput, VerifyEmailInput,
     },
     infrastructure::{
         auth::{JwtService, PasswordService},
@@ -135,6 +135,52 @@ impl AuthService {
         Ok(UserPublicView::from(updated))
     }
 
+    pub async fn send_email_code(&self, input: SendEmailCodeInput) -> Result<ValueAck, AppError> {
+        validation::validate_email(&input.email)?;
+        validation::validate_required(&input.purpose, "purpose")?;
+
+        let user = self
+            .users
+            .find_by_email(&input.email)
+            .await?
+            .ok_or_else(|| AppError::not_found("user not found"))?;
+        let code = self
+            .users
+            .create_email_verification_code(user.id, &user.email, &input.purpose)
+            .await?;
+        let email = self
+            .mail_service
+            .verification_code_email(user.email.clone(), &user.full_name, &code);
+        self.mail_service.send(email).await?;
+
+        Ok(ValueAck {
+            ok: true,
+            expires_in_seconds: 600,
+            code_length: 5,
+        })
+    }
+
+    pub async fn verify_email_code(&self, input: VerifyEmailCodeInput) -> Result<UserPublicView, AppError> {
+        validation::validate_email(&input.email)?;
+        validation::validate_required(&input.code, "code")?;
+
+        let user = self
+            .users
+            .find_by_email_verification_code(&input.email, &input.code)
+            .await?
+            .ok_or_else(|| AppError::bad_request("invalid or expired verification code"))?;
+        let updated = self
+            .users
+            .mark_email_verified(user.id)
+            .await?
+            .ok_or_else(|| AppError::not_found("user not found"))?;
+        self.users
+            .mark_email_verification_code_used(&input.email, &input.code)
+            .await?;
+
+        Ok(UserPublicView::from(updated))
+    }
+
     pub async fn refresh(&self, refresh_token: &str) -> Result<AuthResponse, AppError> {
         validation::validate_required(refresh_token, "refresh_token")?;
 
@@ -168,4 +214,11 @@ impl AuthService {
             user: UserPublicView::from(user),
         })
     }
+}
+
+#[derive(Clone, serde::Serialize)]
+pub struct ValueAck {
+    pub ok: bool,
+    pub expires_in_seconds: u64,
+    pub code_length: u8,
 }
