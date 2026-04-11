@@ -1,90 +1,115 @@
-name: Build and Deploy
+  name: Build and Deploy
 
-on:
-  push:
-    branches: [master]
+  on:
+    push:
+      branches: [master]
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    environment:
-      name: ec2-backend
+  env:
+    APP_NAME: realestate
+    APP_ROOT: /root/app
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+  jobs:
+    deploy:
+      runs-on: ubuntu-latest
+      environment:
+        name: ec2-backend
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      steps:
+        - name: Checkout
+          uses: actions/checkout@v4
 
-      - name: Build release binary
-        run: cargo build --release
+        - name: Install Rust
+          uses: dtolnay/rust-toolchain@stable
 
-      # ✅ HARD VALIDATION (prevents your previous "0 byte binary" disaster)
-      - name: Validate binary
-        run: |
-          ls -lah target/release/
-          test -s target/release/realestate
-          file target/release/realestate
+        - name: Build release binary
+          run: cargo build --release
 
-      # ✅ Normalize artifact (removes path ambiguity)
-      - name: Prepare deploy artifact
-        run: |
-          cp target/release/realestate realestate
-          chmod +x realestate
+        - name: Run tests
+          run: cargo test
 
-      # 🚀 Upload ONLY final binary
-      - name: Upload binary to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: 68.183.127.248
-          username: root
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "realestate"
-          target: "/root/app/releases/"
+        - name: Validate binary
+          run: |
+            ls -lah target/release/
+            test -s target/release/${APP_NAME}
+            file target/release/${APP_NAME}
 
-      # 🚀 Activate release (safe atomic switch)
-      - name: Activate release
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: 68.183.127.248
-          username: root
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            set -e
+        - name: Prepare deploy artifact
+          run: |
+            cp target/release/${APP_NAME} ${APP_NAME}
+            chmod +x ${APP_NAME}
 
-            APP_NAME="realestate"
-            NEW="/root/app/releases/${APP_NAME}_${GITHUB_SHA}"
+        - name: Prepare remote directories
+          uses: appleboy/ssh-action@v1.0.3
+          with:
+            host: 68.183.127.248
+            username: root
+            key: ${{ secrets.SSH_PRIVATE_KEY }}
+            script: |
+              set -eu
+              APP_ROOT="${{ env.APP_ROOT }}"
+              mkdir -p "${APP_ROOT}/releases"
 
-            # move uploaded binary into versioned folder
-            mkdir -p "$NEW"
-            mv /root/app/releases/realestate "$NEW/$APP_NAME"
-            chmod +x "$NEW/$APP_NAME"
+        - name: Upload binary to server
+          uses: appleboy/scp-action@v0.1.7
+          with:
+            host: 68.183.127.248
+            username: root
+            key: ${{ secrets.SSH_PRIVATE_KEY }}
+            source: "${{ env.APP_NAME }}"
+            target: "${{ env.APP_ROOT }}/releases/"
+            overwrite: true
 
-            # save previous release for rollback
-            if [ -L /root/app/current ]; then
-              PREV=$(readlink /root/app/current)
-              ln -sfn "$PREV" /root/app/previous || true
-            fi
+        - name: Activate release
+          uses: appleboy/ssh-action@v1.0.3
+          with:
+            host: 68.183.127.248
+            username: root
+            key: ${{ secrets.SSH_PRIVATE_KEY }}
+            envs: GITHUB_SHA
+            script: |
+              set -e
 
-            # switch to new release
-            ln -sfn "$NEW/$APP_NAME" /root/app/current
+              APP_NAME="${{ env.APP_NAME }}"
+              APP_ROOT="${{ env.APP_ROOT }}"
+              NEW="${APP_ROOT}/releases/${APP_NAME}_${GITHUB_SHA}"
 
-            # restart service
-            systemctl restart myapp
-            sleep 3
+              echo "Deploying commit: $GITHUB_SHA"
 
-            # health check gate (CRITICAL)
-            if curl -fs http://127.0.0.1:3000/health > /dev/null; then
-              echo "✅ deploy successful"
-              exit 0
-            else
-              echo "❌ health check failed — rolling back"
-
-              if [ -L /root/app/previous ]; then
-                ln -sfn "$(readlink /root/app/previous)" /root/app/current
-                systemctl restart myapp
+              # fail fast if SHA missing
+              if [ -z "$GITHUB_SHA" ]; then
+                echo "❌ GITHUB_SHA is empty"
+                exit 1
               fi
 
-              exit 1
-            fi
+              mkdir -p "$NEW"
+
+              mv ${APP_ROOT}/releases/${APP_NAME} "$NEW/$APP_NAME"
+              chmod +x "$NEW/$APP_NAME"
+
+              # save previous release
+              if [ -L ${APP_ROOT}/current ]; then
+                PREV=$(readlink ${APP_ROOT}/current)
+                ln -sfn "$PREV" ${APP_ROOT}/previous || true
+              fi
+
+              # switch to new release
+              ln -sfn "$NEW/$APP_NAME" ${APP_ROOT}/current
+
+              # restart service
+              systemctl restart myapp
+              sleep 3
+
+              # health check gate
+              if curl -fs http://127.0.0.1:3000/health > /dev/null; then
+                echo "✅ deploy successful"
+                exit 0
+              else
+                echo "❌ health check failed — rolling back"
+
+                if [ -L ${APP_ROOT}/previous ]; then
+                  ln -sfn "$(readlink ${APP_ROOT}/previous)" ${APP_ROOT}/current
+                  systemctl restart myapp
+                fi
+
+                exit 1
+              fi
