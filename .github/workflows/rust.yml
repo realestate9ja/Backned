@@ -53,14 +53,38 @@ jobs:
           script: |
             set -e
 
-            NEW="/root/app/releases/realestate_${GITHUB_SHA}"
+            APP_NAME="realestate"
+            NEW="/root/app/releases/${APP_NAME}_${GITHUB_SHA}"
 
-            mv /root/app/releases/realestate "$NEW"
+            # move uploaded binary into versioned folder
+            mkdir -p "$NEW"
+            mv /root/app/releases/realestate "$NEW/$APP_NAME"
+            chmod +x "$NEW/$APP_NAME"
 
-            ln -sfn "$NEW" /root/app/current
+            # save previous release for rollback
+            if [ -L /root/app/current ]; then
+              PREV=$(readlink /root/app/current)
+              ln -sfn "$PREV" /root/app/previous || true
+            fi
 
-            chmod +x "$NEW"
+            # switch to new release
+            ln -sfn "$NEW/$APP_NAME" /root/app/current
 
+            # restart service
             systemctl restart myapp
-            sleep 2
-            systemctl --no-pager status myapp
+            sleep 3
+
+            # health check gate (CRITICAL)
+            if curl -fs http://127.0.0.1:3000/health > /dev/null; then
+              echo "✅ deploy successful"
+              exit 0
+            else
+              echo "❌ health check failed — rolling back"
+
+              if [ -L /root/app/previous ]; then
+                ln -sfn "$(readlink /root/app/previous)" /root/app/current
+                systemctl restart myapp
+              fi
+
+              exit 1
+            fi
