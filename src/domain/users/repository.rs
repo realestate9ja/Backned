@@ -241,10 +241,7 @@ impl UserRepository {
             FROM users
             WHERE role = 'agent'
               AND notifications_enabled = TRUE
-              AND (
-                    LOWER(COALESCE(operating_city, '')) = LOWER($1)
-                 OR LOWER(COALESCE(operating_state, '')) = LOWER($2)
-              )
+              AND LOWER(COALESCE(operating_state, '')) = LOWER($2)
             "#,
         )
         .bind(city.trim())

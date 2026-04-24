@@ -551,7 +551,7 @@ async fn api_v1_unassigned_onboarding_and_role_surfaces_work() {
     )
     .await;
     assert_eq!(onboarding.0, StatusCode::OK);
-    assert_eq!(onboarding.1["profile"]["onboarding_completed"], true);
+    assert_eq!(onboarding.1["profile"]["onboardingCompleted"], true);
 
     let me = request_json(
         &app,

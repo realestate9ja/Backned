@@ -25,11 +25,11 @@ impl PropertyRepository {
             r#"
             INSERT INTO properties (
                 id, owner_id, agent_id, title, price, location, exact_address, description, images,
-                contact_name, contact_phone, is_service_apartment, self_managed, status
+                contact_name, contact_phone, is_service_apartment, listing_type, self_managed, status
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             RETURNING id, owner_id, agent_id, title, price, location, exact_address, description, images,
-                      contact_name, contact_phone, is_service_apartment, self_managed, status,
+                      contact_name, contact_phone, is_service_apartment, listing_type, self_managed, status,
                       verified_by, verified_at, created_at, updated_at
             "#,
         )
@@ -45,6 +45,7 @@ impl PropertyRepository {
         .bind(&input.contact_name)
         .bind(&input.contact_phone)
         .bind(input.is_service_apartment)
+        .bind(input.listing_type.as_deref().unwrap_or(if input.is_service_apartment { "shortlet" } else { "rent" }))
         .bind(self_managed)
         .bind(status)
         .fetch_one(&self.pool)
@@ -71,6 +72,7 @@ impl PropertyRepository {
                 p.description,
                 p.images,
                 p.is_service_apartment,
+                p.listing_type,
                 p.status,
                 p.self_managed,
                 p.owner_id,
@@ -78,10 +80,22 @@ impl PropertyRepository {
                 owner.full_name AS owner_name,
                 agent.full_name AS agent_name,
                 p.created_at,
-                p.verified_at
+                p.verified_at,
+                COALESCE(view_stats.view_count, 0) AS view_count,
+                COALESCE(offer_stats.offer_count, 0) AS offer_count
             FROM properties p
             INNER JOIN users owner ON owner.id = p.owner_id
             LEFT JOIN users agent ON agent.id = p.agent_id
+            LEFT JOIN (
+                SELECT property_id, COUNT(*)::bigint AS view_count
+                FROM property_views
+                GROUP BY property_id
+            ) view_stats ON view_stats.property_id = p.id
+            LEFT JOIN (
+                SELECT property_id, COUNT(*)::bigint AS offer_count
+                FROM offers
+                GROUP BY property_id
+            ) offer_stats ON offer_stats.property_id = p.id
             WHERE p.status = 'published'
             "#,
         );
@@ -123,6 +137,7 @@ impl PropertyRepository {
                 p.description,
                 p.images,
                 p.is_service_apartment,
+                p.listing_type,
                 p.status,
                 p.self_managed,
                 p.owner_id,
@@ -135,10 +150,22 @@ impl PropertyRepository {
                 p.verified_by,
                 p.verified_at,
                 p.created_at,
-                p.updated_at
+                p.updated_at,
+                COALESCE(view_stats.view_count, 0) AS view_count,
+                COALESCE(offer_stats.offer_count, 0) AS offer_count
             FROM properties p
             INNER JOIN users owner ON owner.id = p.owner_id
             LEFT JOIN users agent ON agent.id = p.agent_id
+            LEFT JOIN (
+                SELECT property_id, COUNT(*)::bigint AS view_count
+                FROM property_views
+                GROUP BY property_id
+            ) view_stats ON view_stats.property_id = p.id
+            LEFT JOIN (
+                SELECT property_id, COUNT(*)::bigint AS offer_count
+                FROM offers
+                GROUP BY property_id
+            ) offer_stats ON offer_stats.property_id = p.id
             WHERE p.id = $1 AND p.status = 'published'
             "#,
         )
@@ -160,6 +187,7 @@ impl PropertyRepository {
                 p.description,
                 p.images,
                 p.is_service_apartment,
+                p.listing_type,
                 p.status,
                 p.self_managed,
                 p.owner_id,
@@ -172,10 +200,22 @@ impl PropertyRepository {
                 p.verified_by,
                 p.verified_at,
                 p.created_at,
-                p.updated_at
+                p.updated_at,
+                COALESCE(view_stats.view_count, 0) AS view_count,
+                COALESCE(offer_stats.offer_count, 0) AS offer_count
             FROM properties p
             INNER JOIN users owner ON owner.id = p.owner_id
             LEFT JOIN users agent ON agent.id = p.agent_id
+            LEFT JOIN (
+                SELECT property_id, COUNT(*)::bigint AS view_count
+                FROM property_views
+                GROUP BY property_id
+            ) view_stats ON view_stats.property_id = p.id
+            LEFT JOIN (
+                SELECT property_id, COUNT(*)::bigint AS offer_count
+                FROM offers
+                GROUP BY property_id
+            ) offer_stats ON offer_stats.property_id = p.id
             WHERE p.id = $1
             "#,
         )
@@ -459,5 +499,21 @@ impl PropertyRepository {
         .await?;
 
         Ok(property)
+    }
+
+    pub async fn record_view(&self, property_id: Uuid, viewer_user_id: Option<Uuid>) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO property_views (id, property_id, viewer_user_id)
+            VALUES ($1, $2, $3)
+            "#,
+        )
+        .bind(Uuid::new_v4())
+        .bind(property_id)
+        .bind(viewer_user_id)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
     }
 }

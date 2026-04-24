@@ -187,6 +187,10 @@ impl PropertyService {
                 return Ok(detail);
             }
 
+            self.properties.record_view(id, Some(user.id)).await?;
+            self.cache.invalidate_namespace("properties:detail").await?;
+            self.cache.invalidate_namespace("properties:list").await?;
+
             let visibility = match user.role {
                 UserRole::Agent | UserRole::Landlord | UserRole::Admin => "privileged",
                 UserRole::Unassigned | UserRole::Seeker => "restricted",
@@ -209,6 +213,9 @@ impl PropertyService {
 
         let cache_key = self.cache.versioned_key("properties:detail", &format!("{id}:restricted")).await?;
         if let Some(cached) = self.cache.get_json::<PropertyDetail>(&cache_key).await? {
+            self.properties.record_view(id, None).await?;
+            self.cache.invalidate_namespace("properties:detail").await?;
+            self.cache.invalidate_namespace("properties:list").await?;
             return Ok(cached);
         }
         let detail = self
@@ -217,6 +224,9 @@ impl PropertyService {
             .await?
             .ok_or_else(|| AppError::not_found("property not found"))?
             .sanitize_for_role(UserRole::Seeker);
+        self.properties.record_view(id, None).await?;
+        self.cache.invalidate_namespace("properties:detail").await?;
+        self.cache.invalidate_namespace("properties:list").await?;
         self.cache.set_json(&cache_key, &detail).await?;
         Ok(detail)
     }

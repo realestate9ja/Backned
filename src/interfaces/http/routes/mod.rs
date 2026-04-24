@@ -7,13 +7,22 @@ use crate::interfaces::http::{
     state::AppState,
 };
 use axum::{
+    http::{header, Method},
     middleware,
     routing::{get, patch, post},
     Router,
 };
-use tower_http::trace::TraceLayer;
+use tower_http::{
+    cors::{AllowOrigin, CorsLayer},
+    trace::TraceLayer,
+};
 
 pub fn create_router(state: AppState) -> Router {
+    let cors = CorsLayer::new()
+        .allow_origin(AllowOrigin::mirror_request())
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE, Method::OPTIONS])
+        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE, header::ACCEPT, header::ORIGIN, header::HeaderName::from_static("x-requested-with")])
+        .allow_credentials(true);
     Router::new()
         .route("/health", get(health::health))
         .route(
@@ -85,6 +94,7 @@ pub fn create_router(state: AppState) -> Router {
         .layer(middleware::from_fn_with_state(state.clone(), audit_middleware))
         .layer(middleware::from_fn(request_context_middleware))
         .layer(TraceLayer::new_for_http())
+        .layer(cors)
         .with_state(state)
 }
 
@@ -111,6 +121,9 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
             auth_rate_limit_middleware,
         )))
         .route("/auth/logout", post(api_v1::logout))
+        .route("/users/password", axum::routing::put(api_v1::update_password))
+        .route("/users/{id}", get(users::get_user))
+        .route("/users/{id}/reviews", get(trust::list_user_reviews))
         .route("/onboarding/role", post(api_v1::select_onboarding_role))
         .route("/onboarding/profile", axum::routing::put(api_v1::upsert_onboarding_profile))
         .route("/verifications", post(api_v1::create_verification))
@@ -119,8 +132,10 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
         .route("/uploads/presign", post(api_v1::uploads_presign))
         .route("/properties", get(api_v1::list_public_properties))
         .route("/properties/{id}", get(properties::get_property))
+        .route("/properties/{id}/reviews", get(api_v1::list_property_reviews))
         .route("/seeker/dashboard/overview", get(api_v1::seeker_dashboard_overview))
         .route("/agent/dashboard/overview", get(api_v1::agent_dashboard_overview))
+        .route("/agent/notification-settings", get(api_v1::get_agent_notification_settings).patch(api_v1::update_agent_notification_settings))
         .route("/landlord/dashboard/overview", get(api_v1::landlord_dashboard_overview))
         .route("/agent/properties", post(properties::create_property).get(api_v1::list_agent_properties))
         .route("/agent/properties/{id}", patch(api_v1::update_agent_property))
@@ -130,10 +145,13 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
         .route("/agent/payouts", get(api_v1::list_agent_payouts))
         .route("/agent/calendar", get(api_v1::list_agent_calendar))
         .route("/offers", post(api_v1::create_offer))
+        .route("/reviews", post(api_v1::create_review))
         .route("/seeker/offers", get(api_v1::list_seeker_offers))
+        .route("/seeker/offers/{id}", patch(api_v1::update_seeker_offer))
         .route("/seeker/saved-properties", post(api_v1::create_saved_property).get(api_v1::list_saved_properties))
         .route("/seeker/saved-properties/{propertyId}", axum::routing::delete(api_v1::delete_saved_property))
         .route("/bookings", post(api_v1::create_booking))
+        .route("/bookings/{id}", patch(api_v1::update_booking))
         .route("/seeker/bookings", get(api_v1::list_seeker_bookings))
         .route("/agent/bookings", get(api_v1::list_agent_bookings))
         .route("/landlord/properties", post(api_v1::create_landlord_property).get(api_v1::list_landlord_properties))
@@ -150,6 +168,7 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
         .route("/admin/reports", get(api_v1::list_admin_reports))
         .route("/admin/announcements", get(api_v1::list_admin_announcements).post(api_v1::create_admin_announcement))
         .route("/admin/verifications", get(api_v1::admin_list_verifications))
+        .route("/admin/verifications/{id}/detail", get(api_v1::admin_get_verification_detail))
         .route("/admin/verifications/{id}", patch(api_v1::admin_update_verification))
         .route("/notifications", get(api_v1::list_notifications))
         .route("/notifications/read-all", patch(api_v1::notifications_read_all))

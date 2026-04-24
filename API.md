@@ -608,7 +608,7 @@ Returns:
 
 ### `GET /api/v1/landlord/dashboard/overview`
 
-Protected: `landlord`
+Protected: `landlord`/api/v1/landlord/dashboard/overview`
 
 Returns:
 

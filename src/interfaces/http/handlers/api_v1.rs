@@ -9,6 +9,8 @@ use serde_json::{Value, json};
 use sqlx::{FromRow, PgPool, Row};
 use uuid::Uuid;
 
+use crate::infrastructure::auth::PasswordService;
+
 use crate::{
     domain::{
         posts::{CreatePostInput, PostListItem, PostQuery},
@@ -32,6 +34,13 @@ pub struct RefreshTokenPayload {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct UpdatePasswordInput {
+    pub old_password: String,
+    pub new_password: String,
+    pub new_password_confirm: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ApiRegisterInput {
     pub full_name: String,
     pub email: String,
@@ -51,6 +60,7 @@ pub struct OnboardingProfileInput {
     pub role: Option<UserRole>,
     pub phone: Option<String>,
     pub city: Option<String>,
+    pub operating_state: Option<String>,
     pub avatar_url: Option<String>,
     pub bio: Option<String>,
     pub preferred_city: Option<String>,
@@ -114,6 +124,29 @@ pub struct CreateBookingInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct UpdateBookingInput {
+    pub scheduled_for: Option<DateTime<Utc>>,
+    pub notes: Option<String>,
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateOfferStatusInput {
+    pub status: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiCreateReviewInput {
+    pub reviewee_id: Uuid,
+    pub property_id: Option<Uuid>,
+    pub rating: i16,
+    pub comment: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UploadPresignInput {
     pub category: String,
     pub filename: String,
@@ -131,6 +164,7 @@ pub struct UpdateAgentPropertyInput {
     pub images: Option<Vec<String>>,
     pub contact_name: Option<String>,
     pub contact_phone: Option<String>,
+    pub listing_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -175,6 +209,8 @@ pub struct AuthMeResponse {
     pub profile: Option<ProfileView>,
     pub role_profile: Option<Value>,
     pub verification: Option<VerificationView>,
+    pub verification_documents: Vec<VerificationDocumentView>,
+    pub liveness_completed: bool,
 }
 
 #[derive(Debug, Serialize, FromRow)]
@@ -267,6 +303,14 @@ pub struct OfferView {
     pub declined_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[sqlx(default)]
+    pub property_title: Option<String>,
+    #[sqlx(default)]
+    pub property_location: Option<String>,
+    #[sqlx(default)]
+    pub property_images: Option<Vec<String>>,
+    #[sqlx(default)]
+    pub provider_name: Option<String>,
 }
 
 #[derive(Debug, Serialize, FromRow)]
@@ -293,6 +337,32 @@ pub struct BookingView {
     pub notes: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[sqlx(default)]
+    pub property_title: Option<String>,
+    #[sqlx(default)]
+    pub property_location: Option<String>,
+    #[sqlx(default)]
+    pub provider_name: Option<String>,
+    #[sqlx(default)]
+    pub seeker_name: Option<String>,
+    #[sqlx(default)]
+    pub provider_phone: Option<String>,
+    #[sqlx(default)]
+    pub provider_avatar_url: Option<String>,
+}
+
+#[derive(Debug, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyReviewView {
+    pub id: Uuid,
+    pub reviewer_id: Uuid,
+    pub reviewer_name: String,
+    pub reviewee_id: Uuid,
+    pub reviewee_name: String,
+    pub property_id: Option<Uuid>,
+    pub rating: i16,
+    pub comment: String,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize, FromRow)]
@@ -396,15 +466,48 @@ pub struct AdminOverviewMetrics {
 pub struct AdminVerificationQueueItem {
     pub id: Uuid,
     pub user_id: Uuid,
+    pub user_name: String,
     pub user_email: String,
     pub user_role: String,
     pub status: String,
+    pub property_count: i64,
+    pub document_types: Vec<String>,
+    pub documents: Value,
     pub submitted_at: Option<DateTime<Utc>>,
     pub reviewed_at: Option<DateTime<Utc>>,
     pub rejection_reason: Option<String>,
     pub notes: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+async fn insert_notification(
+    pool: &PgPool,
+    user_id: Uuid,
+    kind: &str,
+    title: &str,
+    body: &str,
+    action_url: Option<&str>,
+    extra_data: Value,
+) -> Result<(), AppError> {
+    let mut data = extra_data;
+    if let Some(url) = action_url {
+        data["actionUrl"] = json!(url);
+    }
+
+    sqlx::query(
+        "INSERT INTO notifications (id, user_id, type, title, body, data_json) VALUES ($1, $2, $3, $4, $5, $6)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(user_id)
+    .bind(kind)
+    .bind(title)
+    .bind(body)
+    .bind(data)
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
 
 pub async fn register(
@@ -446,11 +549,25 @@ pub async fn me(
     let profile = fetch_profile(&state.pool, user.id).await?;
     let role_profile = fetch_role_profile(&state.pool, &user).await?;
     let verification = fetch_latest_verification(&state.pool, user.id).await?;
+    let verification_documents = if let Some(item) = &verification {
+        fetch_verification_documents(&state.pool, item.id).await?
+    } else {
+        Vec::new()
+    };
+    let liveness_completed = verification
+        .as_ref()
+        .map(|item| {
+            matches!(item.status.as_str(), "submitted" | "pending" | "in_review" | "approved" | "verified")
+                && verification_documents.iter().any(|doc| doc.document_type == "selfie")
+        })
+        .unwrap_or(false);
     Ok(Json(AuthMeResponse {
         user: UserPublicView::from(user),
         profile,
         role_profile,
         verification,
+        verification_documents,
+        liveness_completed,
     }))
 }
 
@@ -474,12 +591,26 @@ pub async fn select_onboarding_role(
     let profile = fetch_profile(&state.pool, user.id).await?;
     let role_profile = fetch_role_profile(&state.pool, &updated).await?;
     let verification = fetch_latest_verification(&state.pool, user.id).await?;
+    let verification_documents = if let Some(item) = &verification {
+        fetch_verification_documents(&state.pool, item.id).await?
+    } else {
+        Vec::new()
+    };
+    let liveness_completed = verification
+        .as_ref()
+        .map(|item| {
+            matches!(item.status.as_str(), "submitted" | "pending" | "in_review" | "approved" | "verified")
+                && verification_documents.iter().any(|doc| doc.document_type == "selfie")
+        })
+        .unwrap_or(false);
 
     Ok(Json(AuthMeResponse {
         user: UserPublicView::from(updated),
         profile,
         role_profile,
         verification,
+        verification_documents,
+        liveness_completed,
     }))
 }
 
@@ -496,6 +627,32 @@ pub async fn logout(
     Json(payload): Json<RefreshTokenPayload>,
 ) -> Result<StatusCode, AppError> {
     state.auth_use_cases.logout(&payload.refresh_token).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn update_password(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Json(payload): Json<UpdatePasswordInput>,
+) -> Result<StatusCode, AppError> {
+    if payload.new_password != payload.new_password_confirm {
+        return Err(AppError::bad_request("password confirmation does not match"));
+    }
+
+    crate::utils::validation::validate_password(&payload.new_password)?;
+
+    let password_service = PasswordService;
+    if !password_service.verify_password(&payload.old_password, &user.password_hash)? {
+        return Err(AppError::unauthorized("invalid password"));
+    }
+
+    let hash = password_service.hash_password(&payload.new_password)?;
+    sqlx::query("UPDATE users SET password_hash = $2, updated_at = NOW() WHERE id = $1")
+        .bind(user.id)
+        .bind(hash)
+        .execute(&state.pool)
+        .await?;
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -537,6 +694,13 @@ pub async fn upsert_onboarding_profile(
         UPDATE users
         SET phone = COALESCE($2, phone),
             bio = COALESCE($3, bio),
+            operating_city = CASE WHEN role = 'agent' THEN COALESCE($4, operating_city) ELSE operating_city END,
+            operating_state = CASE WHEN role = 'agent' THEN COALESCE($5, operating_state) ELSE operating_state END,
+            notifications_enabled = CASE
+                WHEN role = 'agent' AND COALESCE($4, '') <> '' AND COALESCE($5, '') <> '' THEN TRUE
+                ELSE notifications_enabled
+            END,
+            wallet_address = COALESCE($6, wallet_address),
             updated_at = NOW()
         WHERE id = $1
         "#,
@@ -544,6 +708,9 @@ pub async fn upsert_onboarding_profile(
     .bind(user.id)
     .bind(payload.phone.as_ref().map(|value| value.trim().to_string()))
     .bind(payload.bio.as_ref().map(|value| value.trim().to_string()))
+    .bind(payload.city.as_ref().map(|value| value.trim().to_string()))
+    .bind(payload.operating_state.as_ref().map(|value| value.trim().to_string()))
+    .bind(payload.avatar_url.as_ref().map(|value| value.trim().to_string()))
     .execute(&state.pool)
     .await?;
 
@@ -621,13 +788,60 @@ pub async fn upsert_onboarding_profile(
     let profile = fetch_profile(&state.pool, user.id).await?;
     let role_profile = fetch_role_profile(&state.pool, &refreshed_user).await?;
     let verification = fetch_latest_verification(&state.pool, user.id).await?;
+    let verification_documents = if let Some(item) = &verification {
+        fetch_verification_documents(&state.pool, item.id).await?
+    } else {
+        Vec::new()
+    };
+    let liveness_completed = verification
+        .as_ref()
+        .map(|item| {
+            matches!(item.status.as_str(), "submitted" | "pending" | "in_review" | "approved" | "verified")
+                && verification_documents.iter().any(|doc| doc.document_type == "selfie")
+        })
+        .unwrap_or(false);
 
     Ok(Json(AuthMeResponse {
         user: UserPublicView::from(refreshed_user),
         profile,
         role_profile,
         verification,
+        verification_documents,
+        liveness_completed,
     }))
+}
+
+pub async fn get_agent_notification_settings(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<crate::domain::users::AgentNotificationSettingsView>, AppError> {
+    if user.role != UserRole::Agent {
+        return Err(AppError::forbidden("only agents can view notification settings"));
+    }
+
+    let refreshed = state
+        .user_repository
+        .find_by_id(user.id)
+        .await?
+        .ok_or_else(|| AppError::not_found("user not found"))?;
+
+    Ok(Json(crate::domain::users::AgentNotificationSettingsView {
+        notifications_enabled: refreshed.notifications_enabled,
+        operating_city: refreshed.operating_city,
+        operating_state: refreshed.operating_state,
+    }))
+}
+
+pub async fn update_agent_notification_settings(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Json(payload): Json<crate::domain::users::UpdateAgentNotificationSettingsInput>,
+) -> Result<Json<crate::domain::users::AgentNotificationSettingsView>, AppError> {
+    let settings = state
+        .user_use_cases
+        .update_agent_notification_settings(&user, payload)
+        .await?;
+    Ok(Json(settings))
 }
 
 pub async fn create_verification(
@@ -635,8 +849,8 @@ pub async fn create_verification(
     AuthUser(user): AuthUser,
     Json(payload): Json<CreateVerificationInput>,
 ) -> Result<(StatusCode, Json<VerificationView>), AppError> {
-    if !matches!(user.role, UserRole::Agent | UserRole::Landlord) {
-        return Err(AppError::forbidden("only agent and landlord accounts can submit verification"));
+    if !matches!(user.role, UserRole::Seeker | UserRole::Agent | UserRole::Landlord) {
+        return Err(AppError::forbidden("only seeker, agent, and landlord accounts can submit verification"));
     }
 
     let verification = sqlx::query_as::<_, VerificationView>(
@@ -729,6 +943,7 @@ pub async fn list_agent_properties(
             p.description,
             p.images,
             p.is_service_apartment,
+            p.listing_type,
             p.status,
             p.self_managed,
             p.owner_id,
@@ -736,10 +951,22 @@ pub async fn list_agent_properties(
             owner.full_name AS owner_name,
             agent.full_name AS agent_name,
             p.created_at,
-            p.verified_at
+            p.verified_at,
+            COALESCE(view_stats.view_count, 0) AS view_count,
+            COALESCE(offer_stats.offer_count, 0) AS offer_count
         FROM properties p
         INNER JOIN users owner ON owner.id = p.owner_id
         LEFT JOIN users agent ON agent.id = p.agent_id
+        LEFT JOIN (
+            SELECT property_id, COUNT(*)::bigint AS view_count
+            FROM property_views
+            GROUP BY property_id
+        ) view_stats ON view_stats.property_id = p.id
+        LEFT JOIN (
+            SELECT property_id, COUNT(*)::bigint AS offer_count
+            FROM offers
+            GROUP BY property_id
+        ) offer_stats ON offer_stats.property_id = p.id
         WHERE p.agent_id = $1 OR p.owner_id = $1
         ORDER BY p.created_at DESC
         "#,
@@ -789,13 +1016,16 @@ pub async fn list_seeker_needs(
             p.desired_features,
             p.status,
             p.description,
-            COUNT(r.id)::bigint AS response_count,
+            COALESCE(offer_stats.offer_count, 0) AS response_count,
             p.created_at
         FROM posts p
         INNER JOIN users u ON u.id = p.author_id
-        LEFT JOIN responses r ON r.post_id = p.id
+        LEFT JOIN (
+            SELECT need_post_id, COUNT(*)::bigint AS offer_count
+            FROM offers
+            GROUP BY need_post_id
+        ) offer_stats ON offer_stats.need_post_id = p.id
         WHERE p.author_id = $1
-        GROUP BY p.id, u.full_name, u.role
         ORDER BY p.created_at DESC
         "#,
     )
@@ -848,6 +1078,9 @@ pub async fn create_offer(
     if !matches!(user.role, UserRole::Agent | UserRole::Landlord) {
         return Err(AppError::forbidden("only agents and landlords can send offers"));
     }
+    if payload.message.trim().is_empty() {
+        return Err(AppError::bad_request("message is required"));
+    }
     let can_use_property = sqlx::query_scalar::<_, bool>(
         r#"
         SELECT EXISTS(
@@ -865,6 +1098,20 @@ pub async fn create_offer(
     if !can_use_property {
         return Err(AppError::forbidden("you can only send offers with properties you own or manage"));
     }
+
+    let (seeker_user_id, request_title, property_title) = sqlx::query_as::<_, (Uuid, String, String)>(
+        r#"
+        SELECT p.author_id, p.request_title, property.title
+        FROM posts p
+        INNER JOIN properties property ON property.id = $2
+        WHERE p.id = $1
+        "#,
+    )
+    .bind(payload.need_post_id)
+    .bind(payload.property_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::not_found("need post not found"))?;
 
     let offer = sqlx::query_as::<_, OfferView>(
         r#"
@@ -896,7 +1143,117 @@ pub async fn create_offer(
     .fetch_one(&state.pool)
     .await?;
 
+    if user.role == UserRole::Agent {
+        let updated = sqlx::query(
+            r#"
+            UPDATE lead_matches
+            SET matched_property_id = $3,
+                status = 'responded',
+                updated_at = NOW()
+            WHERE agent_user_id = $1
+              AND need_post_id = $2
+            "#,
+        )
+        .bind(user.id)
+        .bind(payload.need_post_id)
+        .bind(payload.property_id)
+        .execute(&state.pool)
+        .await?;
+
+        if updated.rows_affected() == 0 {
+            sqlx::query(
+                r#"
+                INSERT INTO lead_matches (
+                    id, agent_user_id, need_post_id, matched_property_id, match_score, status, created_at, updated_at
+                )
+                VALUES ($1, $2, $3, $4, 100, 'responded', NOW(), NOW())
+                "#,
+            )
+            .bind(payload.lead_match_id.unwrap_or_else(Uuid::new_v4))
+            .bind(user.id)
+            .bind(payload.need_post_id)
+            .bind(payload.property_id)
+            .execute(&state.pool)
+            .await?;
+        }
+    }
+
+    insert_notification(
+        &state.pool,
+        seeker_user_id,
+        "offer_received",
+        "New offer received",
+        &format!(
+            "{} sent an offer for {} on your request \"{}\".",
+            user.full_name, property_title, request_title
+        ),
+        Some("/seeker/offers"),
+        json!({
+            "offerId": offer.id,
+            "propertyId": payload.property_id,
+            "needPostId": payload.need_post_id,
+            "providerUserId": user.id
+        }),
+    )
+    .await?;
+
     Ok((StatusCode::CREATED, Json(offer)))
+}
+
+pub async fn update_seeker_offer(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateOfferStatusInput>,
+) -> Result<Json<OfferView>, AppError> {
+    if user.role != UserRole::Seeker {
+        return Err(AppError::forbidden("only seekers can update offers"));
+    }
+
+    let normalized_status = payload.status.trim().to_lowercase();
+    if normalized_status != "declined" {
+        return Err(AppError::bad_request("invalid offer status"));
+    }
+
+    let offer = sqlx::query_as::<_, OfferView>(
+        r#"
+        UPDATE offers o
+        SET status = 'declined',
+            viewed_at = COALESCE(o.viewed_at, NOW()),
+            declined_at = NOW(),
+            updated_at = NOW()
+        FROM posts need
+        WHERE o.id = $1
+          AND need.id = o.need_post_id
+          AND need.author_id = $2
+        RETURNING o.id, o.need_post_id, o.provider_user_id, o.provider_role, o.property_id, o.lead_match_id,
+                  o.offer_price_amount, o.offer_price_currency, o.offer_price_period, o.move_in_date,
+                  o.custom_terms, o.message, o.priority_send, o.status, o.sent_at, o.viewed_at,
+                  o.accepted_at, o.declined_at, o.created_at, o.updated_at
+        "#,
+    )
+    .bind(id)
+    .bind(user.id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::not_found("offer not found"))?;
+
+    insert_notification(
+        &state.pool,
+        offer.provider_user_id,
+        "offer_declined",
+        "Offer declined",
+        "A seeker declined your property offer.",
+        Some("/provider/inbox"),
+        json!({
+            "offerId": offer.id,
+            "propertyId": offer.property_id,
+            "needPostId": offer.need_post_id
+        }),
+    )
+    .await?;
+
+    Ok(Json(offer))
 }
 
 pub async fn list_seeker_offers(
@@ -912,9 +1269,15 @@ pub async fn list_seeker_offers(
             o.id, o.need_post_id, o.provider_user_id, o.provider_role, o.property_id, o.lead_match_id,
             o.offer_price_amount, o.offer_price_currency, o.offer_price_period, o.move_in_date,
             o.custom_terms, o.message, o.priority_send, o.status, o.sent_at, o.viewed_at,
-            o.accepted_at, o.declined_at, o.created_at, o.updated_at
+            o.accepted_at, o.declined_at, o.created_at, o.updated_at,
+            property.title AS property_title,
+            property.location AS property_location,
+            property.images AS property_images,
+            provider.full_name AS provider_name
         FROM offers o
         INNER JOIN posts p ON p.id = o.need_post_id
+        INNER JOIN properties property ON property.id = o.property_id
+        INNER JOIN users provider ON provider.id = o.provider_user_id
         WHERE p.author_id = $1
         ORDER BY o.created_at DESC
         "#,
@@ -968,14 +1331,222 @@ pub async fn delete_saved_property(
 pub async fn list_saved_properties(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
-) -> Result<Json<Vec<SavedPropertyView>>, AppError> {
+) -> Result<Json<Vec<Value>>, AppError> {
     if user.role != UserRole::Seeker {
         return Err(AppError::forbidden("only seekers can view saved properties"));
     }
-    let items = sqlx::query_as::<_, SavedPropertyView>(
-        "SELECT id, user_id, property_id, created_at FROM saved_properties WHERE user_id = $1 ORDER BY created_at DESC",
+    let items = sqlx::query(
+        r#"
+        SELECT
+            sp.id,
+            sp.user_id,
+            sp.property_id,
+            sp.created_at,
+            p.title,
+            p.price,
+            p.location,
+            p.images,
+            owner.full_name AS owner_name,
+            agent.full_name AS agent_name,
+            COALESCE(view_stats.view_count, 0) AS view_count
+        FROM saved_properties sp
+        INNER JOIN properties p ON p.id = sp.property_id
+        INNER JOIN users owner ON owner.id = p.owner_id
+        LEFT JOIN users agent ON agent.id = p.agent_id
+        LEFT JOIN (
+            SELECT property_id, COUNT(*)::bigint AS view_count
+            FROM property_views
+            GROUP BY property_id
+        ) view_stats ON view_stats.property_id = p.id
+        WHERE sp.user_id = $1
+        ORDER BY sp.created_at DESC
+        "#,
     )
     .bind(user.id)
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(items.into_iter().map(|row| json!({
+        "id": row.get::<Uuid, _>("id"),
+        "userId": row.get::<Uuid, _>("user_id"),
+        "propertyId": row.get::<Uuid, _>("property_id"),
+        "createdAt": row.get::<DateTime<Utc>, _>("created_at"),
+        "title": row.get::<String, _>("title"),
+        "price": row.get::<i64, _>("price"),
+        "location": row.get::<String, _>("location"),
+        "images": row.get::<Vec<String>, _>("images"),
+        "ownerName": row.get::<String, _>("owner_name"),
+        "agentName": row.try_get::<Option<String>, _>("agent_name").ok().flatten(),
+        "viewCount": row.get::<i64, _>("view_count")
+    })).collect()))
+}
+
+pub async fn create_review(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Json(payload): Json<ApiCreateReviewInput>,
+) -> Result<(StatusCode, Json<Value>), AppError> {
+    if payload.rating < 1 || payload.rating > 5 {
+        return Err(AppError::bad_request("rating must be between 1 and 5"));
+    }
+    if payload.comment.trim().is_empty() {
+        return Err(AppError::bad_request("comment is required"));
+    }
+    if payload.reviewee_id == user.id {
+        return Err(AppError::bad_request("you cannot review yourself"));
+    }
+
+    let reviewee_exists = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
+        .bind(payload.reviewee_id)
+        .fetch_one(&state.pool)
+        .await?;
+    if !reviewee_exists {
+        return Err(AppError::not_found("reviewee not found"));
+    }
+
+    if let Some(property_id) = payload.property_id {
+        let property_owner = sqlx::query_as::<_, (Uuid, Option<Uuid>)>(
+            "SELECT owner_id, agent_id FROM properties WHERE id = $1",
+        )
+        .bind(property_id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| AppError::not_found("property not found"))?;
+        let valid_target = payload.reviewee_id == property_owner.0 || Some(payload.reviewee_id) == property_owner.1;
+        if !valid_target {
+            return Err(AppError::bad_request("reviewee does not match this property"));
+        }
+    }
+
+    let has_context = if let Some(property_id) = payload.property_id {
+        sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1
+                FROM bookings
+                WHERE seeker_user_id = $1
+                  AND provider_user_id = $2
+                  AND property_id = $3
+                UNION
+                SELECT 1
+                FROM offers o
+                INNER JOIN posts p ON p.id = o.need_post_id
+                WHERE p.author_id = $1
+                  AND o.provider_user_id = $2
+                  AND o.property_id = $3
+            )
+            "#,
+        )
+        .bind(user.id)
+        .bind(payload.reviewee_id)
+        .bind(property_id)
+        .fetch_one(&state.pool)
+        .await?
+    } else {
+        sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+                SELECT 1
+                FROM bookings
+                WHERE seeker_user_id = $1
+                  AND provider_user_id = $2
+                UNION
+                SELECT 1
+                FROM offers o
+                INNER JOIN posts p ON p.id = o.need_post_id
+                WHERE p.author_id = $1
+                  AND o.provider_user_id = $2
+            )
+            "#,
+        )
+        .bind(user.id)
+        .bind(payload.reviewee_id)
+        .fetch_one(&state.pool)
+        .await?
+    };
+
+    if !has_context {
+        return Err(AppError::forbidden("reviews require an offer or booking history with this agent or property"));
+    }
+
+    let review = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT to_jsonb(x)
+        FROM (
+            INSERT INTO reviews (id, reviewer_id, reviewee_id, property_id, response_id, rating, comment)
+            VALUES ($1, $2, $3, $4, NULL, $5, $6)
+            RETURNING id, reviewer_id, reviewee_id, property_id, response_id, rating, comment, created_at
+        ) x
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(user.id)
+    .bind(payload.reviewee_id)
+    .bind(payload.property_id)
+    .bind(payload.rating)
+    .bind(payload.comment.trim())
+    .fetch_one(&state.pool)
+    .await?;
+
+    if let Some(property_id) = payload.property_id {
+        let low_review_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*)::bigint FROM reviews WHERE property_id = $1 AND rating <= 2",
+        )
+        .bind(property_id)
+        .fetch_one(&state.pool)
+        .await?;
+        if low_review_count >= 3 {
+            sqlx::query("UPDATE properties SET status = 'suspended', updated_at = NOW() WHERE id = $1")
+                .bind(property_id)
+                .execute(&state.pool)
+                .await?;
+        }
+    }
+
+    if let Err(error) = insert_notification(
+        &state.pool,
+        payload.reviewee_id,
+        "review_received",
+        "New review received",
+        "A user left a review on your profile or property.",
+        Some("/provider/settings"),
+        json!({
+            "revieweeId": payload.reviewee_id,
+            "propertyId": payload.property_id,
+            "rating": payload.rating
+        }),
+    )
+    .await
+    {
+        tracing::error!("failed to create review notification: {error:?}");
+    }
+
+    Ok((StatusCode::CREATED, Json(review)))
+}
+
+pub async fn list_property_reviews(
+    State(state): State<AppState>,
+    Path(property_id): Path<Uuid>,
+) -> Result<Json<Vec<PropertyReviewView>>, AppError> {
+    let items = sqlx::query_as::<_, PropertyReviewView>(
+        r#"
+        SELECT
+            r.id,
+            r.reviewer_id,
+            reviewer.full_name AS reviewer_name,
+            r.reviewee_id,
+            reviewee.full_name AS reviewee_name,
+            r.property_id,
+            r.rating,
+            r.comment,
+            r.created_at
+        FROM reviews r
+        INNER JOIN users reviewer ON reviewer.id = r.reviewer_id
+        INNER JOIN users reviewee ON reviewee.id = r.reviewee_id
+        WHERE r.property_id = $1
+        ORDER BY r.created_at DESC
+        "#,
+    )
+    .bind(property_id)
     .fetch_all(&state.pool)
     .await?;
     Ok(Json(items))
@@ -990,11 +1561,31 @@ pub async fn create_booking(
         return Err(AppError::forbidden("only seekers can create bookings"));
     }
 
-    let provider_user_id = sqlx::query_scalar::<_, Uuid>("SELECT provider_user_id FROM offers WHERE id = $1")
+    if !matches!(payload.booking_type.as_str(), "viewing" | "hold" | "move_in" | "shortlet") {
+        return Err(AppError::bad_request("invalid booking_type"));
+    }
+
+    let offer_context = sqlx::query_as::<_, (Uuid, Uuid)>(
+        r#"
+        SELECT o.provider_user_id, o.property_id
+        FROM offers o
+        INNER JOIN posts p ON p.id = o.need_post_id
+        WHERE o.id = $1
+          AND p.author_id = $2
+          AND o.status NOT IN ('declined', 'withdrawn', 'expired')
+        "#,
+    )
         .bind(payload.offer_id)
+        .bind(user.id)
         .fetch_optional(&state.pool)
         .await?
         .ok_or_else(|| AppError::not_found("offer not found"))?;
+    let (provider_user_id, offer_property_id) = offer_context;
+    if offer_property_id != payload.property_id {
+        return Err(AppError::bad_request("booking property does not match offer"));
+    }
+
+    let booking_type = payload.booking_type.clone();
 
     let booking = sqlx::query_as::<_, BookingView>(
         r#"
@@ -1015,7 +1606,163 @@ pub async fn create_booking(
     .fetch_one(&state.pool)
     .await?;
 
+    sqlx::query(
+        r#"
+        UPDATE offers
+        SET status = 'shortlisted',
+            viewed_at = COALESCE(viewed_at, NOW()),
+            updated_at = NOW()
+        WHERE id = $1
+          AND status IN ('sent', 'viewed', 'shortlisted', 'negotiated')
+        "#,
+    )
+    .bind(payload.offer_id)
+    .execute(&state.pool)
+    .await?;
+
+    let property_title = sqlx::query_scalar::<_, String>("SELECT title FROM properties WHERE id = $1")
+        .bind(payload.property_id)
+        .fetch_optional(&state.pool)
+        .await?
+        .unwrap_or_else(|| "property".to_string());
+
+    insert_notification(
+        &state.pool,
+        provider_user_id,
+        "booking_requested",
+        "New site visit requested",
+        &format!(
+            "A seeker requested a {} for {}.",
+            booking_type.replace('_', " "),
+            property_title
+        ),
+        Some("/provider/calendar"),
+        json!({
+            "bookingId": booking.id,
+            "offerId": payload.offer_id,
+            "propertyId": payload.property_id,
+            "scheduledFor": booking.scheduled_for
+        }),
+    )
+    .await?;
+
+    insert_notification(
+        &state.pool,
+        user.id,
+        "booking_created",
+        "Visit scheduled",
+        &format!(
+            "Your {} for {} has been scheduled.",
+            booking_type.replace('_', " "),
+            property_title
+        ),
+        Some("/seeker/bookings"),
+        json!({
+            "bookingId": booking.id,
+            "offerId": payload.offer_id,
+            "propertyId": payload.property_id,
+            "scheduledFor": booking.scheduled_for
+        }),
+    )
+    .await?;
+
     Ok((StatusCode::CREATED, Json(booking)))
+}
+
+pub async fn update_booking(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateBookingInput>,
+) -> Result<Json<BookingView>, AppError> {
+    if payload.scheduled_for.is_none() && payload.notes.is_none() && payload.status.is_none() {
+        return Err(AppError::bad_request("at least one booking field must be provided"));
+    }
+    if let Some(status) = payload.status.as_deref() {
+        if !matches!(status, "pending" | "confirmed" | "completed" | "cancelled" | "no_show") {
+            return Err(AppError::bad_request("invalid booking status"));
+        }
+    }
+
+    let existing = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS(
+            SELECT 1
+            FROM bookings
+            WHERE id = $1
+              AND (seeker_user_id = $2 OR provider_user_id = $2)
+        )
+        "#,
+    )
+    .bind(id)
+    .bind(user.id)
+    .fetch_one(&state.pool)
+    .await?;
+    if !existing {
+        return Err(AppError::not_found("booking not found"));
+    }
+
+    let booking = sqlx::query_as::<_, BookingView>(
+        r#"
+        UPDATE bookings b
+        SET scheduled_for = COALESCE($2, b.scheduled_for),
+            notes = CASE
+                WHEN $3 IS NOT NULL AND b.notes IS NOT NULL AND LENGTH(TRIM(b.notes)) > 0 THEN b.notes || E'\n\n' || TRIM($3)
+                WHEN $3 IS NOT NULL THEN TRIM($3)
+                ELSE b.notes
+            END,
+            status = COALESCE($4, b.status),
+            updated_at = NOW()
+        WHERE b.id = $1
+          AND (b.seeker_user_id = $5 OR b.provider_user_id = $5)
+        RETURNING b.id, b.offer_id, b.property_id, b.unit_id, b.seeker_user_id, b.provider_user_id,
+                  b.booking_type, b.scheduled_for, b.status, b.notes, b.created_at, b.updated_at,
+                  NULL::text AS property_title,
+                  NULL::text AS property_location,
+                  NULL::text AS provider_name,
+                  NULL::text AS seeker_name,
+                  NULL::text AS provider_phone,
+                  NULL::text AS provider_avatar_url
+        "#,
+    )
+    .bind(id)
+    .bind(payload.scheduled_for)
+    .bind(payload.notes.as_deref())
+    .bind(payload.status.as_deref())
+    .bind(user.id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::not_found("booking not found"))?;
+
+    let counterparty_user_id = if booking.seeker_user_id == user.id {
+        booking.provider_user_id
+    } else {
+        booking.seeker_user_id
+    };
+    let action_url = if booking.provider_user_id == counterparty_user_id {
+        "/provider/calendar"
+    } else {
+        "/seeker/bookings"
+    };
+    let actor_label = if user.role == UserRole::Agent { "Agent" } else { "Seeker" };
+
+    insert_notification(
+        &state.pool,
+        counterparty_user_id,
+        "booking_updated",
+        "Booking updated",
+        &format!("{actor_label} updated the booking schedule or meetup notes."),
+        Some(action_url),
+        json!({
+            "bookingId": booking.id,
+            "propertyId": booking.property_id,
+            "scheduledFor": booking.scheduled_for,
+            "status": booking.status
+        }),
+    )
+    .await?;
+
+    Ok(Json(booking))
 }
 
 pub async fn list_seeker_bookings(
@@ -1027,11 +1774,22 @@ pub async fn list_seeker_bookings(
     }
     let items = sqlx::query_as::<_, BookingView>(
         r#"
-        SELECT id, offer_id, property_id, unit_id, seeker_user_id, provider_user_id,
-               booking_type, scheduled_for, status, notes, created_at, updated_at
-        FROM bookings
-        WHERE seeker_user_id = $1
-        ORDER BY created_at DESC
+        SELECT
+            b.id, b.offer_id, b.property_id, b.unit_id, b.seeker_user_id, b.provider_user_id,
+            b.booking_type, b.scheduled_for, b.status, b.notes, b.created_at, b.updated_at,
+            p.title AS property_title,
+            p.location AS property_location,
+            provider.full_name AS provider_name,
+            seeker.full_name AS seeker_name,
+            provider.phone AS provider_phone,
+            provider_profile.avatar_url AS provider_avatar_url
+        FROM bookings b
+        INNER JOIN properties p ON p.id = b.property_id
+        INNER JOIN users provider ON provider.id = b.provider_user_id
+        INNER JOIN users seeker ON seeker.id = b.seeker_user_id
+        LEFT JOIN profiles provider_profile ON provider_profile.user_id = provider.id
+        WHERE b.seeker_user_id = $1
+        ORDER BY b.created_at DESC
         "#,
     )
     .bind(user.id)
@@ -1049,11 +1807,22 @@ pub async fn list_agent_bookings(
     }
     let items = sqlx::query_as::<_, BookingView>(
         r#"
-        SELECT id, offer_id, property_id, unit_id, seeker_user_id, provider_user_id,
-               booking_type, scheduled_for, status, notes, created_at, updated_at
-        FROM bookings
-        WHERE provider_user_id = $1
-        ORDER BY created_at DESC
+        SELECT
+            b.id, b.offer_id, b.property_id, b.unit_id, b.seeker_user_id, b.provider_user_id,
+            b.booking_type, b.scheduled_for, b.status, b.notes, b.created_at, b.updated_at,
+            p.title AS property_title,
+            p.location AS property_location,
+            provider.full_name AS provider_name,
+            seeker.full_name AS seeker_name,
+            provider.phone AS provider_phone,
+            provider_profile.avatar_url AS provider_avatar_url
+        FROM bookings b
+        INNER JOIN properties p ON p.id = b.property_id
+        INNER JOIN users provider ON provider.id = b.provider_user_id
+        INNER JOIN users seeker ON seeker.id = b.seeker_user_id
+        LEFT JOIN profiles provider_profile ON provider_profile.user_id = provider.id
+        WHERE b.provider_user_id = $1
+        ORDER BY b.created_at DESC
         "#,
     )
     .bind(user.id)
@@ -1079,6 +1848,7 @@ pub async fn list_landlord_properties(
             p.description,
             p.images,
             p.is_service_apartment,
+            p.listing_type,
             p.status,
             p.self_managed,
             p.owner_id,
@@ -1250,9 +2020,13 @@ pub async fn admin_list_verifications(
         SELECT
             v.id,
             v.user_id,
+            u.full_name AS user_name,
             u.email AS user_email,
             u.role::text AS user_role,
             v.status,
+            COALESCE(property_counts.property_count, 0) AS property_count,
+            COALESCE(document_types.document_types, ARRAY[]::text[]) AS document_types,
+            COALESCE(documents.documents, '[]'::jsonb) AS documents,
             v.submitted_at,
             v.reviewed_at,
             v.rejection_reason,
@@ -1261,12 +2035,118 @@ pub async fn admin_list_verifications(
             v.updated_at
         FROM verifications v
         INNER JOIN users u ON u.id = v.user_id
+        LEFT JOIN (
+            SELECT vd.verification_id, ARRAY_AGG(vd.document_type ORDER BY vd.created_at ASC) AS document_types
+            FROM verification_documents vd
+            GROUP BY vd.verification_id
+        ) document_types ON document_types.verification_id = v.id
+        LEFT JOIN (
+            SELECT
+                vd.verification_id,
+                jsonb_agg(
+                    jsonb_build_object(
+                        'id', vd.id,
+                        'documentType', vd.document_type,
+                        'fileUrl', vd.file_url,
+                        'fileKey', vd.file_key,
+                        'mimeType', vd.mime_type,
+                        'status', vd.status,
+                        'createdAt', vd.created_at
+                    )
+                    ORDER BY vd.created_at ASC
+                ) AS documents
+            FROM verification_documents vd
+            GROUP BY vd.verification_id
+        ) documents ON documents.verification_id = v.id
+        LEFT JOIN (
+            SELECT user_id, SUM(property_count)::bigint AS property_count
+            FROM (
+                SELECT owner_id AS user_id, COUNT(*)::bigint AS property_count
+                FROM properties
+                GROUP BY owner_id
+                UNION ALL
+                SELECT agent_id AS user_id, COUNT(*)::bigint AS property_count
+                FROM properties
+                WHERE agent_id IS NOT NULL
+                GROUP BY agent_id
+            ) property_counts_union
+            GROUP BY user_id
+        ) property_counts ON property_counts.user_id = v.user_id
         ORDER BY v.created_at DESC
         "#,
     )
     .fetch_all(&state.pool)
     .await?;
     Ok(Json(items))
+}
+
+pub async fn admin_get_verification_detail(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(verification_id): Path<Uuid>,
+) -> Result<Json<Value>, AppError> {
+    ensure_admin(&user)?;
+
+    let verification = sqlx::query(
+        r#"
+        SELECT
+            v.id,
+            v.user_id,
+            u.full_name AS user_name,
+            u.email AS user_email,
+            u.role::text AS user_role,
+            v.status,
+            v.submitted_at,
+            v.reviewed_at,
+            v.rejection_reason,
+            v.notes,
+            v.created_at,
+            v.updated_at,
+            COALESCE(property_counts.property_count, 0) AS property_count
+        FROM verifications v
+        INNER JOIN users u ON u.id = v.user_id
+        LEFT JOIN (
+            SELECT user_id, SUM(property_count)::bigint AS property_count
+            FROM (
+                SELECT owner_id AS user_id, COUNT(*)::bigint AS property_count
+                FROM properties
+                GROUP BY owner_id
+                UNION ALL
+                SELECT agent_id AS user_id, COUNT(*)::bigint AS property_count
+                FROM properties
+                WHERE agent_id IS NOT NULL
+                GROUP BY agent_id
+            ) property_counts_union
+            GROUP BY user_id
+        ) property_counts ON property_counts.user_id = v.user_id
+        WHERE v.id = $1
+        "#,
+    )
+    .bind(verification_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::not_found("verification not found"))?;
+
+    let documents = fetch_verification_documents(&state.pool, verification_id).await?;
+
+    Ok(Json(json!({
+        "verification": {
+            "id": verification.get::<Uuid, _>("id"),
+            "userId": verification.get::<Uuid, _>("user_id"),
+            "userName": verification.get::<String, _>("user_name"),
+            "userEmail": verification.get::<String, _>("user_email"),
+            "userRole": verification.get::<String, _>("user_role"),
+            "status": verification.get::<String, _>("status"),
+            "submittedAt": verification.try_get::<Option<DateTime<Utc>>, _>("submitted_at")?,
+            "reviewedAt": verification.try_get::<Option<DateTime<Utc>>, _>("reviewed_at")?,
+            "rejectionReason": verification.try_get::<Option<String>, _>("rejection_reason")?,
+            "notes": verification.try_get::<Option<String>, _>("notes")?,
+            "createdAt": verification.get::<DateTime<Utc>, _>("created_at"),
+            "updatedAt": verification.get::<DateTime<Utc>, _>("updated_at"),
+            "propertyCount": verification.get::<i64, _>("property_count")
+        },
+        "documents": documents
+    })))
 }
 
 pub async fn admin_update_verification(
@@ -1344,6 +2224,45 @@ pub async fn admin_update_verification(
         payload.verification_notes.as_deref(),
     );
     state.mail_service.send(email).await?;
+
+    insert_notification(
+        &state.pool,
+        user_record.id,
+        if legacy_status == "verified" {
+            "kyc_approved"
+        } else if legacy_status == "rejected" {
+            "kyc_rejected"
+        } else {
+            "kyc_updated"
+        },
+        if legacy_status == "verified" {
+            "KYC approved"
+        } else if legacy_status == "rejected" {
+            "KYC rejected"
+        } else {
+            "KYC updated"
+        },
+        if legacy_status == "verified" {
+            "Your identity verification was approved."
+        } else if legacy_status == "rejected" {
+            "Your identity verification was rejected. Review the notes and resubmit."
+        } else {
+            "Your identity verification status changed."
+        },
+        Some(match user_record.role {
+            UserRole::Agent => "/provider/settings",
+            UserRole::Landlord => "/landlord/settings",
+            UserRole::Seeker => "/seeker/settings",
+            UserRole::Admin => "/admin/settings",
+            UserRole::Unassigned => "/onboarding",
+        }),
+        json!({
+            "verificationId": verification.id,
+            "status": legacy_status,
+            "notes": payload.verification_notes
+        }),
+    )
+    .await?;
 
     Ok(Json(verification))
 }
@@ -1570,6 +2489,7 @@ pub async fn update_agent_property(
             images = COALESCE($8, images),
             contact_name = COALESCE($9, contact_name),
             contact_phone = COALESCE($10, contact_phone),
+            listing_type = COALESCE($11, listing_type),
             updated_at = NOW()
         WHERE id = $1 AND (owner_id = $2 OR agent_id = $2)
         "#,
@@ -1584,6 +2504,7 @@ pub async fn update_agent_property(
     .bind(payload.images)
     .bind(payload.contact_name)
     .bind(payload.contact_phone)
+    .bind(payload.listing_type)
     .execute(&state.pool)
     .await?;
     if updated.rows_affected() == 0 {
@@ -1768,9 +2689,19 @@ pub async fn list_admin_users(
         r#"
         SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb)
         FROM (
-            SELECT id, full_name, email, role::text AS role, email_verified, verification_status, is_banned, created_at
-            FROM users
-            ORDER BY created_at DESC
+            SELECT
+                u.id,
+                u.full_name,
+                u.email,
+                u.role::text AS role,
+                u.email_verified,
+                u.verification_status,
+                u.is_banned,
+                u.created_at,
+                p.avatar_url
+            FROM users u
+            LEFT JOIN profiles p ON p.user_id = u.id
+            ORDER BY u.created_at DESC
         ) x
         "#,
     )
@@ -1788,9 +2719,27 @@ pub async fn list_admin_properties(
         r#"
         SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb)
         FROM (
-            SELECT id, owner_id, agent_id, title, location, price, status::text AS status, created_at
-            FROM properties
-            ORDER BY created_at DESC
+            SELECT
+                p.id,
+                p.owner_id,
+                p.agent_id,
+                p.title,
+                p.location,
+                p.price,
+                p.status::text AS status,
+                p.created_at,
+                p.is_service_apartment,
+                p.listing_type,
+                owner.full_name AS owner_name,
+                owner_profile.avatar_url AS owner_avatar_url,
+                agent.full_name AS agent_name,
+                agent_profile.avatar_url AS agent_avatar_url
+            FROM properties p
+            INNER JOIN users owner ON owner.id = p.owner_id
+            LEFT JOIN profiles owner_profile ON owner_profile.user_id = owner.id
+            LEFT JOIN users agent ON agent.id = p.agent_id
+            LEFT JOIN profiles agent_profile ON agent_profile.user_id = agent.id
+            ORDER BY p.created_at DESC
         ) x
         "#,
     )
@@ -1868,12 +2817,52 @@ pub async fn create_admin_announcement(
         "#,
     )
     .bind(Uuid::new_v4())
-    .bind(payload.title)
-    .bind(payload.body)
-    .bind(payload.audience)
+    .bind(payload.title.clone())
+    .bind(payload.body.clone())
+    .bind(payload.audience.clone())
     .bind(user.id)
     .fetch_one(&state.pool)
     .await?;
+
+    let target_roles: Option<Vec<&'static str>> = match payload.audience.trim().to_lowercase().as_str() {
+        "all" | "all users" => None,
+        "seekers" | "seekers only" | "tenants" => Some(vec!["seeker"]),
+        "providers" | "providers only" => Some(vec!["agent", "landlord"]),
+        "agents" | "agents only" => Some(vec!["agent"]),
+        "landlords" | "landlords only" => Some(vec!["landlord"]),
+        _ => None,
+    };
+
+    let recipients = if let Some(roles) = target_roles {
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE role::text = ANY($1)")
+            .bind(&roles)
+            .fetch_all(&state.pool)
+            .await?
+    } else {
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM users")
+            .fetch_all(&state.pool)
+            .await?
+    };
+
+    for recipient_id in recipients {
+        if let Err(error) = insert_notification(
+            &state.pool,
+            recipient_id,
+            "announcement",
+            &payload.title,
+            &payload.body,
+            Some("/admin/announcements"),
+            json!({
+                "audience": payload.audience,
+                "announcementId": item.get("id").cloned().unwrap_or(Value::Null)
+            }),
+        )
+        .await
+        {
+            tracing::error!("failed to fan out announcement notification: {error:?}");
+        }
+    }
+
     Ok((StatusCode::CREATED, Json(item)))
 }
 

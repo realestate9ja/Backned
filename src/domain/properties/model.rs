@@ -26,6 +26,7 @@ pub struct CreatePropertyInput {
     pub contact_name: String,
     pub contact_phone: String,
     pub is_service_apartment: bool,
+    pub listing_type: Option<String>,
     pub requested_agent_id: Option<Uuid>,
     pub self_managed: Option<bool>,
 }
@@ -54,6 +55,7 @@ pub struct Property {
     pub contact_name: String,
     pub contact_phone: String,
     pub is_service_apartment: bool,
+    pub listing_type: String,
     pub self_managed: bool,
     pub status: PropertyStatus,
     pub verified_by: Option<Uuid>,
@@ -71,6 +73,8 @@ pub struct PropertyListItem {
     pub description: String,
     pub images: Vec<String>,
     pub is_service_apartment: bool,
+    #[sqlx(default)]
+    pub listing_type: String,
     pub status: PropertyStatus,
     pub self_managed: bool,
     pub owner_id: Uuid,
@@ -79,6 +83,10 @@ pub struct PropertyListItem {
     pub agent_name: Option<String>,
     pub created_at: DateTime<Utc>,
     pub verified_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub view_count: i64,
+    #[sqlx(default)]
+    pub offer_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -90,6 +98,8 @@ pub struct PropertyDetail {
     pub description: String,
     pub images: Vec<String>,
     pub is_service_apartment: bool,
+    #[sqlx(default)]
+    pub listing_type: String,
     pub status: PropertyStatus,
     pub self_managed: bool,
     pub owner_id: Uuid,
@@ -103,6 +113,10 @@ pub struct PropertyDetail {
     pub verified_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[sqlx(default)]
+    pub view_count: i64,
+    #[sqlx(default)]
+    pub offer_count: i64,
 }
 
 impl PropertyDetail {

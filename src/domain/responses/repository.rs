@@ -25,6 +25,7 @@ struct ResponsePropertyRow {
     description: String,
     images: Vec<String>,
     is_service_apartment: bool,
+    listing_type: String,
     status: crate::domain::properties::PropertyStatus,
     self_managed: bool,
     owner_id: Uuid,
@@ -156,6 +157,7 @@ impl ResponseRepository {
                 p.description,
                 p.images,
                 p.is_service_apartment,
+                p.listing_type,
                 p.status,
                 p.self_managed,
                 p.owner_id,
@@ -186,6 +188,7 @@ impl ResponseRepository {
                 description: row.description,
                 images: row.images,
                 is_service_apartment: row.is_service_apartment,
+                listing_type: row.listing_type,
                 status: row.status,
                 self_managed: row.self_managed,
                 owner_id: row.owner_id,
@@ -194,6 +197,8 @@ impl ResponseRepository {
                 agent_name: row.agent_name,
                 created_at: row.created_at,
                 verified_at: row.verified_at,
+                view_count: 0,
+                offer_count: 0,
             });
         }
 
