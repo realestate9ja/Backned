@@ -2274,6 +2274,19 @@ pub async fn seeker_dashboard_overview(
     if user.role != UserRole::Seeker {
         return Err(AppError::forbidden("only seekers can view seeker dashboard"));
     }
+
+    // Check verification status for seekers
+    let verification_status = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT verification_status FROM users WHERE id = $1"
+    )
+        .bind(&user.id)
+        .fetch_one(&state.pool)
+        .await?;
+
+    if verification_status.as_deref() != Some("verified") && verification_status.as_deref() != Some("approved") {
+        return Err(AppError::forbidden("please complete your facial verification to access the dashboard"));
+    }
+
     let need_count =
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM posts WHERE author_id = $1")
             .bind(user.id)
@@ -2315,6 +2328,19 @@ pub async fn agent_dashboard_overview(
     if user.role != UserRole::Agent {
         return Err(AppError::forbidden("only agents can view agent dashboard"));
     }
+
+    // Check verification status for agents
+    let verification_status = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT verification_status FROM users WHERE id = $1"
+    )
+        .bind(&user.id)
+        .fetch_one(&state.pool)
+        .await?;
+
+    if verification_status.as_deref() != Some("verified") && verification_status.as_deref() != Some("approved") {
+        return Err(AppError::forbidden("please complete your identity verification and facial verification to access the dashboard"));
+    }
+
     let listing_count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM properties WHERE owner_id = $1 OR agent_id = $1",
     )
@@ -2354,6 +2380,19 @@ pub async fn landlord_dashboard_overview(
     AuthUser(user): AuthUser,
 ) -> Result<Json<Value>, AppError> {
     ensure_landlord(&user)?;
+
+    // Check verification status for landlords
+    let verification_status = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT verification_status FROM users WHERE id = $1"
+    )
+        .bind(&user.id)
+        .fetch_one(&state.pool)
+        .await?;
+
+    if verification_status.as_deref() != Some("verified") && verification_status.as_deref() != Some("approved") {
+        return Err(AppError::forbidden("please complete your identity verification and facial verification to access the dashboard"));
+    }
+
     let property_count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM properties WHERE owner_id = $1",
     )
