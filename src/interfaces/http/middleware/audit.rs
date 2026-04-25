@@ -50,7 +50,7 @@ pub async fn audit_middleware(
     let actor = resolve_actor(&state, request.headers()).await;
     let response = next.run(request).await;
 
-    if !matches!(matched_path.as_str(), "/auth/register" | "/auth/login") {
+    if should_audit(&method, &matched_path) {
         let event = AuditEvent {
             request_id: context.request_id,
             action: action_name(&method, &matched_path),
@@ -71,6 +71,46 @@ pub async fn audit_middleware(
     }
 
     response
+}
+
+fn should_audit(method: &str, matched_path: &str) -> bool {
+    !matches!(
+        (method, matched_path),
+        (_, "/auth/register")
+            | (_, "/auth/login")
+            | (_, "/api/v1/auth/register")
+            | (_, "/api/v1/auth/login")
+            | (_, "/api/v1/auth/me")
+            | (_, "/api/v1/auth/refresh")
+            | (_, "/api/v1/auth/logout")
+            | (_, "/api/v1/uploads/presign")
+            | (_, "/api/v1/notifications")
+            | (_, "/api/v1/notifications/read-all")
+            | (_, "/api/v1/notifications/{id}/read")
+            | (_, "/api/v1/notifications/{id}")
+            | (_, "/api/v1/seeker/saved-properties")
+            | (_, "/api/v1/seeker/saved-properties/{propertyId}")
+            | (_, "/api/v1/agent/notification-settings")
+            | (_, "/api/v1/reviews")
+            | (_, "/api/v1/users/{id}/reviews")
+            | (_, "/api/v1/properties/{id}/reviews")
+            | ("GET", "/dashboard")
+            | ("GET", "/properties")
+            | ("GET", "/properties/{id}")
+            | ("GET", "/posts")
+            | ("GET", "/users/{id}/reviews")
+            | ("GET", "/api/v1/properties")
+            | ("GET", "/api/v1/properties/{id}")
+            | ("GET", "/api/v1/seeker/dashboard/overview")
+            | ("GET", "/api/v1/agent/dashboard/overview")
+            | ("GET", "/api/v1/landlord/dashboard/overview")
+            | ("GET", "/api/v1/agent/leads")
+            | ("GET", "/api/v1/agent/leads/{id}")
+            | ("GET", "/api/v1/agent/properties")
+            | ("GET", "/api/v1/landlord/properties")
+            | ("GET", "/api/v1/agent/calendar")
+            | ("GET", "/api/v1/landlord/calendar")
+    )
 }
 
 async fn resolve_actor(state: &AppState, headers: &HeaderMap) -> AuditActor {

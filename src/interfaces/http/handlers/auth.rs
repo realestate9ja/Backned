@@ -7,7 +7,11 @@ use crate::{
         state::AppState,
     },
 };
-use axum::{extract::{Query, State}, http::StatusCode, Json};
+use axum::{
+    extract::{OriginalUri, Query, State},
+    http::StatusCode,
+    Json,
+};
 use serde_json::json;
 
 pub async fn register(
@@ -51,40 +55,72 @@ pub async fn register(
 pub async fn login(
     State(state): State<AppState>,
     context: RequestContext,
+    OriginalUri(uri): OriginalUri,
     Json(payload): Json<LoginInput>,
 ) -> Result<Json<crate::domain::users::AuthResponse>, AppError> {
     let email = payload.email.clone();
-    let response = state.auth_use_cases.login(payload).await?;
-    state
-        .audit_service
-        .record(
-            AuditActor {
-                user_id: Some(response.user.id),
-                email: Some(email),
-                role: Some(
-                    serde_json::to_string(&response.user.role)
-                        .map_err(anyhow::Error::from)?
-                        .trim_matches('"')
-                        .to_string(),
-                ),
-            },
-            AuditEvent {
-                request_id: context.request_id,
-                action: "auth.login".to_string(),
-                method: "POST".to_string(),
-                path: "/auth/login".to_string(),
-                status_code: StatusCode::OK.as_u16(),
-                ip_address: context.ip_address,
-                user_agent: context.user_agent,
-                resource_type: Some("user".to_string()),
-                resource_id: Some(response.user.id),
-                success: true,
-                metadata: json!({}),
-            },
-        )
-        .await
-        .map_err(anyhow::Error::from)?;
-    Ok(Json(response))
+    let path = uri.path().to_string();
+    match state.auth_use_cases.login(payload).await {
+        Ok(response) => {
+            state
+                .audit_service
+                .record(
+                    AuditActor {
+                        user_id: Some(response.user.id),
+                        email: Some(email),
+                        role: Some(
+                            serde_json::to_string(&response.user.role)
+                                .map_err(anyhow::Error::from)?
+                                .trim_matches('"')
+                                .to_string(),
+                        ),
+                    },
+                    AuditEvent {
+                        request_id: context.request_id,
+                        action: "auth.login".to_string(),
+                        method: "POST".to_string(),
+                        path,
+                        status_code: StatusCode::OK.as_u16(),
+                        ip_address: context.ip_address,
+                        user_agent: context.user_agent,
+                        resource_type: Some("user".to_string()),
+                        resource_id: Some(response.user.id),
+                        success: true,
+                        metadata: json!({}),
+                    },
+                )
+                .await
+                .map_err(anyhow::Error::from)?;
+            Ok(Json(response))
+        }
+        Err(error) => {
+            state
+                .audit_service
+                .record(
+                    AuditActor {
+                        user_id: None,
+                        email: Some(email),
+                        role: None,
+                    },
+                    AuditEvent {
+                        request_id: context.request_id,
+                        action: "auth.login".to_string(),
+                        method: "POST".to_string(),
+                        path,
+                        status_code: error.status.as_u16(),
+                        ip_address: context.ip_address,
+                        user_agent: context.user_agent,
+                        resource_type: Some("user".to_string()),
+                        resource_id: None,
+                        success: false,
+                        metadata: json!({ "message": error.message }),
+                    },
+                )
+                .await
+                .map_err(anyhow::Error::from)?;
+            Err(error)
+        }
+    }
 }
 
 pub async fn bootstrap_admin(
