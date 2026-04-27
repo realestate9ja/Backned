@@ -43,7 +43,11 @@ impl TrustRepository {
         Ok(review)
     }
 
-    pub async fn list_reviews_for_user(&self, user_id: Uuid, limit: i64) -> Result<Vec<ReviewView>> {
+    pub async fn list_reviews_for_user(
+        &self,
+        user_id: Uuid,
+        limit: i64,
+    ) -> Result<Vec<ReviewView>> {
         let reviews = sqlx::query_as::<_, ReviewView>(
             r#"
             SELECT

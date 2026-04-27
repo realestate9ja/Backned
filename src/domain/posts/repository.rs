@@ -131,7 +131,11 @@ impl PostRepository {
         Ok(posts)
     }
 
-    pub async fn list_active_by_author(&self, author_id: Uuid, limit: i64) -> Result<Vec<PostListItem>> {
+    pub async fn list_active_by_author(
+        &self,
+        author_id: Uuid,
+        limit: i64,
+    ) -> Result<Vec<PostListItem>> {
         let posts = sqlx::query_as::<_, PostListItem>(
             r#"
             SELECT
@@ -172,10 +176,11 @@ impl PostRepository {
     }
 
     pub async fn exists(&self, post_id: Uuid) -> Result<bool> {
-        let exists = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM posts WHERE id = $1)")
-            .bind(post_id)
-            .fetch_one(&self.pool)
-            .await?;
+        let exists =
+            sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM posts WHERE id = $1)")
+                .bind(post_id)
+                .fetch_one(&self.pool)
+                .await?;
 
         Ok(exists)
     }

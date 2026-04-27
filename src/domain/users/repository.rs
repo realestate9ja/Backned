@@ -56,7 +56,11 @@ impl UserRepository {
         Ok(user)
     }
 
-    pub async fn create_admin(&self, input: &BootstrapAdminInput, password_hash: &str) -> Result<User> {
+    pub async fn create_admin(
+        &self,
+        input: &BootstrapAdminInput,
+        password_hash: &str,
+    ) -> Result<User> {
         let user = sqlx::query_as::<_, User>(
             r#"
             INSERT INTO users (id, full_name, email, email_verified, password_hash, role, verification_status, verified_at)
@@ -75,8 +79,13 @@ impl UserRepository {
         .fetch_one(&self.pool)
         .await?;
 
-        self.ensure_profile(user.id, &user.full_name, user.phone.as_deref(), user.bio.as_deref())
-            .await?;
+        self.ensure_profile(
+            user.id,
+            &user.full_name,
+            user.phone.as_deref(),
+            user.bio.as_deref(),
+        )
+        .await?;
 
         Ok(user)
     }
@@ -219,8 +228,18 @@ impl UserRepository {
         )
         .bind(agent_id)
         .bind(input.notifications_enabled)
-        .bind(input.operating_city.as_ref().map(|value| value.trim().to_string()))
-        .bind(input.operating_state.as_ref().map(|value| value.trim().to_string()))
+        .bind(
+            input
+                .operating_city
+                .as_ref()
+                .map(|value| value.trim().to_string()),
+        )
+        .bind(
+            input
+                .operating_state
+                .as_ref()
+                .map(|value| value.trim().to_string()),
+        )
         .fetch_one(&self.pool)
         .await?;
 
@@ -484,7 +503,11 @@ impl UserRepository {
         Ok(())
     }
 
-    pub async fn create_refresh_token(&self, user_id: Uuid, expires_at: chrono::DateTime<Utc>) -> Result<String> {
+    pub async fn create_refresh_token(
+        &self,
+        user_id: Uuid,
+        expires_at: chrono::DateTime<Utc>,
+    ) -> Result<String> {
         let token = Uuid::new_v4().to_string();
         sqlx::query(
             r#"

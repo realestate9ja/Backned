@@ -47,7 +47,9 @@ impl AuthService {
         validation::validate_email(&input.email)?;
         validation::validate_password(&input.password)?;
         if input.role == UserRole::Admin {
-            return Err(AppError::forbidden("admin users cannot be created through public registration"));
+            return Err(AppError::forbidden(
+                "admin users cannot be created through public registration",
+            ));
         }
 
         if self.users.find_by_email(&input.email).await?.is_some() {
@@ -59,10 +61,19 @@ impl AuthService {
         if matches!(user.role, crate::domain::users::UserRole::Agent) {
             self.cache.invalidate_namespace("agents").await?;
         }
-        self.build_auth_response(user).await
+        let response = self.build_auth_response(user.clone()).await?;
+        let welcome_url = format!("{}/onboarding", self.app_base_url.trim_end_matches('/'));
+        let welcome_email =
+            self.mail_service
+                .welcome_email(user.email.clone(), &user.full_name, &welcome_url);
+        self.mail_service.send(welcome_email).await?;
+        Ok(response)
     }
 
-    pub async fn bootstrap_admin(&self, input: BootstrapAdminInput) -> Result<AuthResponse, AppError> {
+    pub async fn bootstrap_admin(
+        &self,
+        input: BootstrapAdminInput,
+    ) -> Result<AuthResponse, AppError> {
         validation::validate_required(&input.full_name, "full_name")?;
         validation::validate_email(&input.email)?;
         validation::validate_password(&input.password)?;
@@ -107,9 +118,11 @@ impl AuthService {
                 self.app_base_url.trim_end_matches('/'),
                 verification_token
             );
-            let email = self
-                .mail_service
-                .verification_email(user.email.clone(), &user.full_name, &verification_link);
+            let email = self.mail_service.verification_email(
+                user.email.clone(),
+                &user.full_name,
+                &verification_link,
+            );
             self.mail_service.send(email).await?;
         }
 
@@ -130,7 +143,9 @@ impl AuthService {
             .mark_email_verified(user.id)
             .await?
             .ok_or_else(|| AppError::not_found("user not found"))?;
-        self.users.mark_email_verification_token_used(&input.token).await?;
+        self.users
+            .mark_email_verification_token_used(&input.token)
+            .await?;
 
         Ok(UserPublicView::from(updated))
     }
@@ -148,9 +163,9 @@ impl AuthService {
             .users
             .create_email_verification_code(user.id, &user.email, &input.purpose)
             .await?;
-        let email = self
-            .mail_service
-            .verification_code_email(user.email.clone(), &user.full_name, &code);
+        let email =
+            self.mail_service
+                .verification_code_email(user.email.clone(), &user.full_name, &code);
         self.mail_service.send(email).await?;
 
         Ok(ValueAck {
@@ -160,7 +175,10 @@ impl AuthService {
         })
     }
 
-    pub async fn verify_email_code(&self, input: VerifyEmailCodeInput) -> Result<UserPublicView, AppError> {
+    pub async fn verify_email_code(
+        &self,
+        input: VerifyEmailCodeInput,
+    ) -> Result<UserPublicView, AppError> {
         validation::validate_email(&input.email)?;
         validation::validate_required(&input.code, "code")?;
 
@@ -202,7 +220,10 @@ impl AuthService {
         Ok(())
     }
 
-    async fn build_auth_response(&self, user: crate::domain::users::User) -> Result<AuthResponse, AppError> {
+    async fn build_auth_response(
+        &self,
+        user: crate::domain::users::User,
+    ) -> Result<AuthResponse, AppError> {
         let token = self.jwt_service.generate_token(&user)?;
         let refresh_token = self
             .users

@@ -38,4 +38,3 @@ impl PropertyUseCases {
         self.service.get_by_id(id, actor).await
     }
 }
-

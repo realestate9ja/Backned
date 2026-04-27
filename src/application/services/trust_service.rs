@@ -3,7 +3,8 @@ use crate::{
         properties::PropertyRepository,
         responses::ResponseRepository,
         trust::{
-            CreateReportInput, CreateReviewInput, ModerateReportInput, Report, Review, ReviewView, TrustRepository,
+            CreateReportInput, CreateReviewInput, ModerateReportInput, Report, Review, ReviewView,
+            TrustRepository,
         },
         users::{User, UserRepository},
         workflow::WorkflowRepository,
@@ -43,7 +44,11 @@ impl TrustService {
         }
     }
 
-    pub async fn create_review(&self, actor: &User, input: CreateReviewInput) -> Result<Review, AppError> {
+    pub async fn create_review(
+        &self,
+        actor: &User,
+        input: CreateReviewInput,
+    ) -> Result<Review, AppError> {
         if input.rating < 1 || input.rating > 5 {
             return Err(AppError::bad_request("rating must be between 1 and 5"));
         }
@@ -75,7 +80,9 @@ impl TrustService {
                 ));
             }
         } else {
-            return Err(AppError::bad_request("response_id is required to submit a review"));
+            return Err(AppError::bad_request(
+                "response_id is required to submit a review",
+            ));
         }
 
         let review = self
@@ -92,7 +99,10 @@ impl TrustService {
             .map_err(AppError::from)?;
 
         if let Some(property_id) = review.property_id {
-            let low_review_count = self.trust.count_low_reviews_for_property(property_id).await?;
+            let low_review_count = self
+                .trust
+                .count_low_reviews_for_property(property_id)
+                .await?;
             if low_review_count >= 3 {
                 self.properties.suspend_property(property_id).await?;
                 self.invalidate_property_cache().await?;
@@ -107,10 +117,17 @@ impl TrustService {
             .find_by_id(user_id)
             .await?
             .ok_or_else(|| AppError::not_found("user not found"))?;
-        self.trust.list_reviews_for_user(user_id, 50).await.map_err(Into::into)
+        self.trust
+            .list_reviews_for_user(user_id, 50)
+            .await
+            .map_err(Into::into)
     }
 
-    pub async fn create_report(&self, actor: &User, input: CreateReportInput) -> Result<Report, AppError> {
+    pub async fn create_report(
+        &self,
+        actor: &User,
+        input: CreateReportInput,
+    ) -> Result<Report, AppError> {
         if !matches!(input.violation_type.as_str(), "quality" | "fraud" | "other") {
             return Err(AppError::bad_request("invalid violation_type"));
         }
@@ -121,7 +138,9 @@ impl TrustService {
             && input.post_id.is_none()
             && input.response_id.is_none()
         {
-            return Err(AppError::bad_request("report must target a user, property, post, or response"));
+            return Err(AppError::bad_request(
+                "report must target a user, property, post, or response",
+            ));
         }
         if let Some(user_id) = input.reported_user_id {
             self.users
@@ -151,7 +170,11 @@ impl TrustService {
             .map_err(Into::into)
     }
 
-    pub async fn moderate_report(&self, report_id: Uuid, input: ModerateReportInput) -> Result<Report, AppError> {
+    pub async fn moderate_report(
+        &self,
+        report_id: Uuid,
+        input: ModerateReportInput,
+    ) -> Result<Report, AppError> {
         if !matches!(input.status.as_str(), "upheld" | "dismissed") {
             return Err(AppError::bad_request("invalid moderation status"));
         }

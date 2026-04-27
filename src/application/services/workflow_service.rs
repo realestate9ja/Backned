@@ -5,9 +5,9 @@ use crate::{
         users::{User, UserRepository, UserRole},
         workflow::{
             AssignPropertyAgentInput, CertifySiteVisitInput, CreateLiveVideoSessionInput,
-            CreatePropertyAgentRequestInput, CreateSiteVisitInput, CreateThreadMessageInput, LiveVideoSession,
-            PropertyAgentRequest, RequestThreadView, SiteVisitView, UpdateLiveVideoSessionInput,
-            UpdateSiteVisitInput, WorkflowRepository,
+            CreatePropertyAgentRequestInput, CreateSiteVisitInput, CreateThreadMessageInput,
+            LiveVideoSession, PropertyAgentRequest, RequestThreadView, SiteVisitView,
+            UpdateLiveVideoSessionInput, UpdateSiteVisitInput, WorkflowRepository,
         },
     },
     infrastructure::{cache::CacheService, livekit::LiveKitService},
@@ -64,7 +64,11 @@ impl WorkflowService {
             .ok_or_else(|| AppError::internal("request thread could not be loaded"))
     }
 
-    pub async fn get_thread(&self, actor: &User, response_id: Uuid) -> Result<RequestThreadView, AppError> {
+    pub async fn get_thread(
+        &self,
+        actor: &User,
+        response_id: Uuid,
+    ) -> Result<RequestThreadView, AppError> {
         let context = self.load_response_context(response_id).await?;
         self.ensure_response_participant(actor.id, &context)?;
         self.workflow
@@ -81,7 +85,9 @@ impl WorkflowService {
     ) -> Result<LiveVideoSession, AppError> {
         let context = self.load_response_context(response_id).await?;
         if actor.id != context.buyer_id {
-            return Err(AppError::forbidden("only the buyer can request a live video session"));
+            return Err(AppError::forbidden(
+                "only the buyer can request a live video session",
+            ));
         }
         let room_name = self.livekit.room_name_for_session(Uuid::new_v4());
         let session = self
@@ -112,7 +118,9 @@ impl WorkflowService {
             .await?
             .ok_or_else(|| AppError::not_found("live video session not found"))?;
         if actor.id != existing.buyer_id && actor.id != existing.agent_id {
-            return Err(AppError::forbidden("you cannot update this live video session"));
+            return Err(AppError::forbidden(
+                "you cannot update this live video session",
+            ));
         }
 
         self.workflow
@@ -139,7 +147,9 @@ impl WorkflowService {
             .await?
             .ok_or_else(|| AppError::not_found("live video session not found"))?;
         if actor.id != session.buyer_id && actor.id != session.agent_id {
-            return Err(AppError::forbidden("you cannot access this live video session"));
+            return Err(AppError::forbidden(
+                "you cannot access this live video session",
+            ));
         }
 
         let participant_identity = format!("{}:{}", actor.role_label(), actor.id);
@@ -178,19 +188,28 @@ impl WorkflowService {
         validation::validate_required(&input.meeting_point, "meeting_point")?;
         let context = self.load_response_context(response_id).await?;
         if actor.id != context.buyer_id {
-            return Err(AppError::forbidden("only the buyer can schedule a site visit"));
+            return Err(AppError::forbidden(
+                "only the buyer can schedule a site visit",
+            ));
         }
         if !self
             .workflow
             .is_property_linked_to_response(response_id, input.property_id)
             .await?
         {
-            return Err(AppError::bad_request("property is not linked to this response"));
+            return Err(AppError::bad_request(
+                "property is not linked to this response",
+            ));
         }
 
         let site_visit = self
             .workflow
-            .create_site_visit(&context, input.property_id, input.scheduled_at, input.meeting_point.trim())
+            .create_site_visit(
+                &context,
+                input.property_id,
+                input.scheduled_at,
+                input.meeting_point.trim(),
+            )
             .await?;
         self.workflow
             .find_site_visit_view(site_visit.id)
@@ -278,10 +297,14 @@ impl WorkflowService {
             .await?
             .ok_or_else(|| AppError::not_found("property not found"))?;
         if property.owner_id != actor.id {
-            return Err(AppError::forbidden("you can only request an agent for your own property"));
+            return Err(AppError::forbidden(
+                "you can only request an agent for your own property",
+            ));
         }
         if property.self_managed {
-            return Err(AppError::bad_request("self-managed properties cannot request an agent"));
+            return Err(AppError::bad_request(
+                "self-managed properties cannot request an agent",
+            ));
         }
         if let Some(agent_id) = input.requested_agent_id {
             self.users
@@ -316,10 +339,16 @@ impl WorkflowService {
             .await?
             .ok_or_else(|| AppError::not_found("property not found"))?;
         if property.owner_id != actor.id {
-            return Err(AppError::forbidden("you can only assign agents to your own property"));
+            return Err(AppError::forbidden(
+                "you can only assign agents to your own property",
+            ));
         }
-        if property.status != PropertyStatus::Verified && property.status != PropertyStatus::Published {
-            return Err(AppError::bad_request("property must be verified before assigning an agent"));
+        if property.status != PropertyStatus::Verified
+            && property.status != PropertyStatus::Published
+        {
+            return Err(AppError::bad_request(
+                "property must be verified before assigning an agent",
+            ));
         }
         self.users
             .find_agent_by_id(input.agent_id)
@@ -330,7 +359,9 @@ impl WorkflowService {
             .assign_agent(property_id, input.agent_id)
             .await?
             .ok_or_else(|| AppError::not_found("property not found"))?;
-        self.workflow.fulfill_property_agent_request(property_id).await?;
+        self.workflow
+            .fulfill_property_agent_request(property_id)
+            .await?;
         self.invalidate_property_cache().await?;
 
         self.properties
@@ -339,7 +370,11 @@ impl WorkflowService {
             .ok_or_else(|| AppError::internal("property could not be loaded"))
     }
 
-    pub async fn verify_property(&self, actor: &User, property_id: Uuid) -> Result<PropertyDetail, AppError> {
+    pub async fn verify_property(
+        &self,
+        actor: &User,
+        property_id: Uuid,
+    ) -> Result<PropertyDetail, AppError> {
         if actor.role != UserRole::Agent {
             return Err(AppError::forbidden("only agents can verify properties"));
         }
@@ -349,7 +384,9 @@ impl WorkflowService {
             .await?
             .ok_or_else(|| AppError::not_found("property not found"))?;
         if property.status == PropertyStatus::Published {
-            return Err(AppError::bad_request("published properties are already verified"));
+            return Err(AppError::bad_request(
+                "published properties are already verified",
+            ));
         }
 
         self.properties
@@ -363,7 +400,11 @@ impl WorkflowService {
             .ok_or_else(|| AppError::internal("property could not be loaded"))
     }
 
-    pub async fn publish_property(&self, actor: &User, property_id: Uuid) -> Result<PropertyDetail, AppError> {
+    pub async fn publish_property(
+        &self,
+        actor: &User,
+        property_id: Uuid,
+    ) -> Result<PropertyDetail, AppError> {
         let property = self
             .properties
             .find_detail_by_id_including_unpublished(property_id)
@@ -373,7 +414,9 @@ impl WorkflowService {
             return Err(AppError::forbidden("you cannot publish this property"));
         }
         if property.status != PropertyStatus::Verified {
-            return Err(AppError::bad_request("property must be verified before publishing"));
+            return Err(AppError::bad_request(
+                "property must be verified before publishing",
+            ));
         }
 
         self.properties
@@ -393,7 +436,9 @@ impl WorkflowService {
         context: &crate::domain::workflow::ResponseWorkflowContext,
     ) -> Result<(), AppError> {
         if actor_id != context.buyer_id && actor_id != context.agent_id {
-            return Err(AppError::forbidden("you do not have access to this response workflow"));
+            return Err(AppError::forbidden(
+                "you do not have access to this response workflow",
+            ));
         }
         Ok(())
     }
@@ -412,8 +457,11 @@ impl WorkflowService {
             .find_context(response_id)
             .await?
             .ok_or_else(|| AppError::not_found("response not found"))?;
-        if response.post_author_id != context.buyer_id || response.responder_id != context.agent_id {
-            return Err(AppError::internal("response workflow context is inconsistent"));
+        if response.post_author_id != context.buyer_id || response.responder_id != context.agent_id
+        {
+            return Err(AppError::internal(
+                "response workflow context is inconsistent",
+            ));
         }
         Ok(context)
     }
@@ -433,7 +481,13 @@ impl WorkflowService {
     }
 
     fn validate_site_visit_status(&self, status: &str) -> Result<(), AppError> {
-        let valid = ["scheduled", "confirmed", "completed", "cancelled", "certified"];
+        let valid = [
+            "scheduled",
+            "confirmed",
+            "completed",
+            "cancelled",
+            "certified",
+        ];
         if valid.contains(&status) {
             return Ok(());
         }

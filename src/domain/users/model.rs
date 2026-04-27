@@ -4,8 +4,7 @@ use sqlx::FromRow;
 use uuid::Uuid;
 
 use crate::domain::{
-    notifications::AgentPostNotificationItem,
-    properties::PropertyListItem,
+    notifications::AgentPostNotificationItem, properties::PropertyListItem,
     responses::SeekerActiveRequest,
 };
 

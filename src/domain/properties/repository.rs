@@ -1,4 +1,6 @@
-use crate::domain::properties::{CreatePropertyInput, Property, PropertyDetail, PropertyListItem, PropertyStatus};
+use crate::domain::properties::{
+    CreatePropertyInput, Property, PropertyDetail, PropertyListItem, PropertyStatus,
+};
 use anyhow::Result;
 use sqlx::{PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
@@ -176,7 +178,10 @@ impl PropertyRepository {
         Ok(property)
     }
 
-    pub async fn find_detail_by_id_including_unpublished(&self, id: Uuid) -> Result<Option<PropertyDetail>> {
+    pub async fn find_detail_by_id_including_unpublished(
+        &self,
+        id: Uuid,
+    ) -> Result<Option<PropertyDetail>> {
         let property = sqlx::query_as::<_, PropertyDetail>(
             r#"
             SELECT
@@ -226,7 +231,11 @@ impl PropertyRepository {
         Ok(property)
     }
 
-    pub async fn list_recent_by_owner(&self, owner_id: Uuid, limit: i64) -> Result<Vec<PropertyListItem>> {
+    pub async fn list_recent_by_owner(
+        &self,
+        owner_id: Uuid,
+        limit: i64,
+    ) -> Result<Vec<PropertyListItem>> {
         let items = sqlx::query_as::<_, PropertyListItem>(
             r#"
             SELECT
@@ -302,7 +311,11 @@ impl PropertyRepository {
         Ok(items)
     }
 
-    pub async fn list_recent_managed_by_agent(&self, agent_id: Uuid, limit: i64) -> Result<Vec<PropertyListItem>> {
+    pub async fn list_recent_managed_by_agent(
+        &self,
+        agent_id: Uuid,
+        limit: i64,
+    ) -> Result<Vec<PropertyListItem>> {
         let items = sqlx::query_as::<_, PropertyListItem>(
             r#"
             SELECT
@@ -420,7 +433,11 @@ impl PropertyRepository {
         Ok(items)
     }
 
-    pub async fn assign_agent(&self, property_id: Uuid, agent_id: Uuid) -> Result<Option<Property>> {
+    pub async fn assign_agent(
+        &self,
+        property_id: Uuid,
+        agent_id: Uuid,
+    ) -> Result<Option<Property>> {
         let property = sqlx::query_as::<_, Property>(
             r#"
             UPDATE properties
@@ -441,7 +458,11 @@ impl PropertyRepository {
         Ok(property)
     }
 
-    pub async fn verify_property(&self, property_id: Uuid, verifier_id: Uuid) -> Result<Option<Property>> {
+    pub async fn verify_property(
+        &self,
+        property_id: Uuid,
+        verifier_id: Uuid,
+    ) -> Result<Option<Property>> {
         let property = sqlx::query_as::<_, Property>(
             r#"
             UPDATE properties

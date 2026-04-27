@@ -13,5 +13,9 @@ use sqlx::PgPool;
 
 pub fn build_app(pool: PgPool, settings: Settings) -> Router {
     let state = AppState::new(pool, settings);
+    build_app_with_state(state)
+}
+
+pub fn build_app_with_state(state: AppState) -> Router {
     create_router(state)
 }

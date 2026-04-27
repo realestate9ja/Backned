@@ -41,7 +41,11 @@ impl PostService {
         }
     }
 
-    pub async fn create_post(&self, actor: &User, input: CreatePostInput) -> Result<Uuid, AppError> {
+    pub async fn create_post(
+        &self,
+        actor: &User,
+        input: CreatePostInput,
+    ) -> Result<Uuid, AppError> {
         validation::validate_required(&input.request_title, "request_title")?;
         validation::validate_required(&input.area, "area")?;
         validation::validate_required(&input.city, "city")?;
@@ -51,10 +55,14 @@ impl PostService {
         validation::validate_money(input.min_budget, "min_budget")?;
         validation::validate_money(input.max_budget, "max_budget")?;
         if input.max_budget < input.min_budget {
-            return Err(AppError::bad_request("max_budget must be greater than or equal to min_budget"));
+            return Err(AppError::bad_request(
+                "max_budget must be greater than or equal to min_budget",
+            ));
         }
         if input.bedrooms < 0 {
-            return Err(AppError::bad_request("bedrooms must be greater than or equal to 0"));
+            return Err(AppError::bad_request(
+                "bedrooms must be greater than or equal to 0",
+            ));
         }
         validation::validate_non_empty_vec(&input.desired_features, "desired_features")?;
         validation::validate_required(&input.description, "description")?;
@@ -71,7 +79,9 @@ impl PostService {
                 matched_state: agent.operating_state,
             })
             .collect::<Vec<_>>();
-        self.notifications.create_for_post(post.id, &recipients).await?;
+        self.notifications
+            .create_for_post(post.id, &recipients)
+            .await?;
         self.cache.invalidate_namespace("posts:list").await?;
         Ok(post.id)
     }

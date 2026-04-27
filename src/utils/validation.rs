@@ -26,7 +26,9 @@ pub fn validate_password(password: &str) -> Result<(), AppError> {
 
 pub fn validate_money(value: i64, field: &str) -> Result<(), AppError> {
     if value <= 0 {
-        return Err(AppError::bad_request(format!("{field} must be greater than 0")));
+        return Err(AppError::bad_request(format!(
+            "{field} must be greater than 0"
+        )));
     }
     Ok(())
 }
@@ -37,4 +39,3 @@ pub fn validate_non_empty_vec(values: &[String], field: &str) -> Result<(), AppE
     }
     Ok(())
 }
-

@@ -1,6 +1,6 @@
 use crate::domain::audit::CreateAuditLogInput;
 use anyhow::Result;
-use sqlx::{types::Json, PgPool};
+use sqlx::{PgPool, types::Json};
 use uuid::Uuid;
 
 #[derive(Clone)]

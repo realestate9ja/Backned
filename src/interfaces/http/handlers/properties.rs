@@ -1,15 +1,21 @@
 use crate::{
-    domain::{properties::{CreatePropertyInput, PropertyQuery}, users::UserRole},
+    domain::{
+        properties::{CreatePropertyInput, PropertyQuery},
+        users::UserRole,
+    },
     interfaces::http::{
         errors::AppError,
-        middleware::{auth::{AuthUser, OptionalAuthUser}, rbac::ensure_role},
+        middleware::{
+            auth::{AuthUser, OptionalAuthUser},
+            rbac::ensure_role,
+        },
         state::AppState,
     },
 };
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::StatusCode,
-    Json,
 };
 use uuid::Uuid;
 
@@ -42,4 +48,3 @@ pub async fn get_property(
         .await?;
     Ok(Json(property))
 }
-

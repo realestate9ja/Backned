@@ -44,7 +44,9 @@ impl RateLimiter {
         };
         let now = Instant::now();
         let mut entries = self.entries.lock().await;
-        let queue = entries.entry(format!("{}:{key}", scope_key(scope))).or_default();
+        let queue = entries
+            .entry(format!("{}:{key}", scope_key(scope)))
+            .or_default();
 
         while let Some(front) = queue.front() {
             if now.duration_since(*front) > window {

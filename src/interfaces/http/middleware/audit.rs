@@ -13,7 +13,10 @@ use crate::{
     interfaces::http::{middleware::request_context::RequestContext, state::AppState},
 };
 
-pub async fn request_context_middleware(request: Request<axum::body::Body>, next: Next) -> Response {
+pub async fn request_context_middleware(
+    request: Request<axum::body::Body>,
+    next: Next,
+) -> Response {
     let (parts, body) = request.into_parts();
     let context = RequestContext::from_parts(&parts);
     let mut request = Request::from_parts(parts, body);
@@ -135,7 +138,12 @@ async fn resolve_user_from_headers(state: &AppState, headers: &HeaderMap) -> Opt
         .and_then(|value| value.strip_prefix("Bearer "))
         .map(str::trim)?;
     let claims = state.jwt_service.decode_token(token).ok()?;
-    state.user_repository.find_by_id(claims.sub).await.ok().flatten()
+    state
+        .user_repository
+        .find_by_id(claims.sub)
+        .await
+        .ok()
+        .flatten()
 }
 
 fn role_name(user: &User) -> String {
@@ -150,7 +158,9 @@ fn action_name(method: &str, matched_path: &str) -> String {
         ("GET", "/users/{id}") => "user.view".to_string(),
         ("GET", "/dashboard") => "dashboard.view".to_string(),
         ("GET", "/agents") => "agent.list".to_string(),
-        ("PATCH", "/agents/me/notification-settings") => "agent.notification_settings.update".to_string(),
+        ("PATCH", "/agents/me/notification-settings") => {
+            "agent.notification_settings.update".to_string()
+        }
         ("GET", "/agents/me/post-alerts") => "agent.post_alerts.list".to_string(),
         ("POST", "/properties") => "property.create".to_string(),
         ("GET", "/properties") => "property.list".to_string(),
@@ -158,7 +168,11 @@ fn action_name(method: &str, matched_path: &str) -> String {
         ("POST", "/posts") => "post.create".to_string(),
         ("GET", "/posts") => "post.list".to_string(),
         ("POST", "/posts/{id}/respond") => "post.respond".to_string(),
-        _ => format!("{}.{}", matched_path.replace('/', ".").trim_matches('.'), method.to_lowercase()),
+        _ => format!(
+            "{}.{}",
+            matched_path.replace('/', ".").trim_matches('.'),
+            method.to_lowercase()
+        ),
     }
 }
 

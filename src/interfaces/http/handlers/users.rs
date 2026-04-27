@@ -1,13 +1,12 @@
 use crate::{
     domain::users::{UpdateAgentNotificationSettingsInput, UpdateAgentVerificationInput},
-    interfaces::http::{
-        errors::AppError,
-        middleware::auth::AuthUser,
-        state::AppState,
-    },
+    interfaces::http::{errors::AppError, middleware::auth::AuthUser, state::AppState},
     utils::pagination::PaginationParams,
 };
-use axum::{extract::{Path, Query, State}, Json};
+use axum::{
+    Json,
+    extract::{Path, Query, State},
+};
 use uuid::Uuid;
 
 pub async fn get_user(

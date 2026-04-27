@@ -1,17 +1,13 @@
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
-    Json,
 };
 use uuid::Uuid;
 
 use crate::{
     domain::trust::{CreateReportInput, CreateReviewInput, ModerateReportInput},
-    interfaces::http::{
-        errors::AppError,
-        middleware::auth::AuthUser,
-        state::AppState,
-    },
+    interfaces::http::{errors::AppError, middleware::auth::AuthUser, state::AppState},
 };
 
 pub async fn create_review(
@@ -49,6 +45,9 @@ pub async fn moderate_report(
     if !user.role.can_moderate() {
         return Err(AppError::forbidden("only admins can moderate reports"));
     }
-    let report = state.trust_use_cases.moderate_report(report_id, payload).await?;
+    let report = state
+        .trust_use_cases
+        .moderate_report(report_id, payload)
+        .await?;
     Ok(Json(report))
 }

@@ -4,7 +4,10 @@ use crate::{
             AuditService, AuthService, PostService, PropertyService, TrustService, UserService,
             WorkflowService,
         },
-        use_cases::{AuthUseCases, PostUseCases, PropertyUseCases, TrustUseCases, UserUseCases, WorkflowUseCases},
+        use_cases::{
+            AuthUseCases, PostUseCases, PropertyUseCases, TrustUseCases, UserUseCases,
+            WorkflowUseCases,
+        },
     },
     config::Settings,
     domain::{
@@ -12,13 +15,13 @@ use crate::{
         properties::PropertyRepository, responses::ResponseRepository, trust::TrustRepository,
         users::UserRepository, workflow::WorkflowRepository,
     },
+    infrastructure::rate_limit::RateLimiter,
     infrastructure::{
         auth::{JwtService, PasswordService},
         cache::CacheService,
         email::MailService,
         livekit::LiveKitService,
     },
-    infrastructure::rate_limit::RateLimiter,
 };
 use sqlx::PgPool;
 
@@ -52,8 +55,8 @@ impl AppState {
 
         let password_service = PasswordService;
         let jwt_service = JwtService::new(&settings);
-        let cache_service =
-            CacheService::new(&settings.redis_url, settings.cache_ttl_seconds).expect("invalid redis config");
+        let cache_service = CacheService::new(&settings.redis_url, settings.cache_ttl_seconds)
+            .expect("invalid redis config");
         let livekit_service = LiveKitService::new(
             settings.livekit_url.clone(),
             settings.livekit_api_key.clone(),
@@ -146,10 +149,9 @@ fn build_mail_service(settings: &Settings) -> anyhow::Result<MailService> {
         "resend" => Ok(MailService::resend(
             settings.mail_from_email.clone(),
             settings.mail_from_name.clone(),
-            settings
-                .resend_api_key
-                .clone()
-                .ok_or_else(|| anyhow::anyhow!("RESEND_API_KEY is required when MAIL_PROVIDER=resend"))?,
+            settings.resend_api_key.clone().ok_or_else(|| {
+                anyhow::anyhow!("RESEND_API_KEY is required when MAIL_PROVIDER=resend")
+            })?,
         )),
         "smtp" => MailService::smtp(
             settings.mail_from_email.clone(),
@@ -159,14 +161,12 @@ fn build_mail_service(settings: &Settings) -> anyhow::Result<MailService> {
                 .clone()
                 .ok_or_else(|| anyhow::anyhow!("SMTP_HOST is required when MAIL_PROVIDER=smtp"))?,
             settings.smtp_port,
-            settings
-                .smtp_username
-                .clone()
-                .ok_or_else(|| anyhow::anyhow!("SMTP_USERNAME is required when MAIL_PROVIDER=smtp"))?,
-            settings
-                .smtp_password
-                .clone()
-                .ok_or_else(|| anyhow::anyhow!("SMTP_PASSWORD is required when MAIL_PROVIDER=smtp"))?,
+            settings.smtp_username.clone().ok_or_else(|| {
+                anyhow::anyhow!("SMTP_USERNAME is required when MAIL_PROVIDER=smtp")
+            })?,
+            settings.smtp_password.clone().ok_or_else(|| {
+                anyhow::anyhow!("SMTP_PASSWORD is required when MAIL_PROVIDER=smtp")
+            })?,
             settings.smtp_use_starttls,
         ),
         provider => Err(anyhow::anyhow!("unsupported MAIL_PROVIDER: {provider}")),

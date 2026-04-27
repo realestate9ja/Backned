@@ -1,8 +1,8 @@
 use crate::{
     application::services::{AuthService, ValueAck},
     domain::users::{
-        AuthResponse, BootstrapAdminInput, LoginInput, RegisterUserInput, SendEmailCodeInput, UserPublicView,
-        VerifyEmailCodeInput, VerifyEmailInput,
+        AuthResponse, BootstrapAdminInput, LoginInput, RegisterUserInput, SendEmailCodeInput,
+        UserPublicView, VerifyEmailCodeInput, VerifyEmailInput,
     },
     interfaces::http::errors::AppError,
 };
@@ -21,7 +21,10 @@ impl AuthUseCases {
         self.service.register(input).await
     }
 
-    pub async fn bootstrap_admin(&self, input: BootstrapAdminInput) -> Result<AuthResponse, AppError> {
+    pub async fn bootstrap_admin(
+        &self,
+        input: BootstrapAdminInput,
+    ) -> Result<AuthResponse, AppError> {
         self.service.bootstrap_admin(input).await
     }
 
@@ -37,7 +40,10 @@ impl AuthUseCases {
         self.service.send_email_code(input).await
     }
 
-    pub async fn verify_email_code(&self, input: VerifyEmailCodeInput) -> Result<UserPublicView, AppError> {
+    pub async fn verify_email_code(
+        &self,
+        input: VerifyEmailCodeInput,
+    ) -> Result<UserPublicView, AppError> {
         self.service.verify_email_code(input).await
     }
 

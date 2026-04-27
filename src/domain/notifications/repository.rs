@@ -13,7 +13,11 @@ impl NotificationRepository {
         Self { pool }
     }
 
-    pub async fn create_for_post(&self, post_id: Uuid, targets: &[AgentNotificationTarget]) -> Result<()> {
+    pub async fn create_for_post(
+        &self,
+        post_id: Uuid,
+        targets: &[AgentNotificationTarget],
+    ) -> Result<()> {
         if targets.is_empty() {
             return Ok(());
         }
@@ -33,7 +37,11 @@ impl NotificationRepository {
         Ok(())
     }
 
-    pub async fn list_for_agent(&self, agent_id: Uuid, limit: i64) -> Result<Vec<AgentPostNotificationItem>> {
+    pub async fn list_for_agent(
+        &self,
+        agent_id: Uuid,
+        limit: i64,
+    ) -> Result<Vec<AgentPostNotificationItem>> {
         let items = sqlx::query_as::<_, AgentPostNotificationItem>(
             r#"
             SELECT
@@ -75,7 +83,11 @@ impl NotificationRepository {
         Ok(items)
     }
 
-    pub async fn list_unread_for_agent(&self, agent_id: Uuid, limit: i64) -> Result<Vec<AgentPostNotificationItem>> {
+    pub async fn list_unread_for_agent(
+        &self,
+        agent_id: Uuid,
+        limit: i64,
+    ) -> Result<Vec<AgentPostNotificationItem>> {
         let items = sqlx::query_as::<_, AgentPostNotificationItem>(
             r#"
             SELECT

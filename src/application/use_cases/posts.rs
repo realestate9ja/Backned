@@ -19,7 +19,11 @@ impl PostUseCases {
         Self { service }
     }
 
-    pub async fn create_post(&self, actor: &User, input: CreatePostInput) -> Result<Uuid, AppError> {
+    pub async fn create_post(
+        &self,
+        actor: &User,
+        input: CreatePostInput,
+    ) -> Result<Uuid, AppError> {
         self.service.create_post(actor, input).await
     }
 
@@ -36,4 +40,3 @@ impl PostUseCases {
         self.service.respond(actor, post_id, input).await
     }
 }
-

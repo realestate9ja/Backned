@@ -1,9 +1,4 @@
-use axum::{
-    extract::State,
-    http::Request,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::State, http::Request, middleware::Next, response::Response};
 
 use crate::{
     infrastructure::rate_limit::RateLimitScope,

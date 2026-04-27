@@ -7,8 +7,8 @@ use crate::{
         trust::TrustRepository,
         users::{
             AgentDashboard, AgentNotificationSettingsView, AgentProfile, DashboardResponse,
-            LandlordDashboard, UpdateAgentNotificationSettingsInput, UpdateAgentVerificationInput, User,
-            UserPublicView, UserRepository, UserRole, SeekerDashboard,
+            LandlordDashboard, SeekerDashboard, UpdateAgentNotificationSettingsInput,
+            UpdateAgentVerificationInput, User, UserPublicView, UserRepository, UserRole,
         },
         workflow::WorkflowRepository,
     },
@@ -74,7 +74,11 @@ impl UserService {
             .cache
             .versioned_key(
                 "agents",
-                &format!("page={}&per_page={}", pagination.page(), pagination.per_page()),
+                &format!(
+                    "page={}&per_page={}",
+                    pagination.page(),
+                    pagination.per_page()
+                ),
             )
             .await?;
         if let Some(cached) = self.cache.get_json::<Vec<AgentProfile>>(&cache_key).await? {
@@ -96,18 +100,18 @@ impl UserService {
         input: UpdateAgentNotificationSettingsInput,
     ) -> Result<AgentNotificationSettingsView, AppError> {
         if actor.role != UserRole::Agent {
-            return Err(AppError::forbidden("only agents can update notification settings"));
+            return Err(AppError::forbidden(
+                "only agents can update notification settings",
+            ));
         }
 
         if input.notifications_enabled {
-            let city = input
-                .operating_city
-                .as_deref()
-                .ok_or_else(|| AppError::bad_request("operating_city is required when notifications are enabled"))?;
-            let state = input
-                .operating_state
-                .as_deref()
-                .ok_or_else(|| AppError::bad_request("operating_state is required when notifications are enabled"))?;
+            let city = input.operating_city.as_deref().ok_or_else(|| {
+                AppError::bad_request("operating_city is required when notifications are enabled")
+            })?;
+            let state = input.operating_state.as_deref().ok_or_else(|| {
+                AppError::bad_request("operating_state is required when notifications are enabled")
+            })?;
             validation::validate_required(city, "operating_city")?;
             validation::validate_required(state, "operating_state")?;
         }
@@ -125,7 +129,10 @@ impl UserService {
         })
     }
 
-    pub async fn list_agent_post_alerts(&self, actor: &User) -> Result<Vec<AgentPostNotificationItem>, AppError> {
+    pub async fn list_agent_post_alerts(
+        &self,
+        actor: &User,
+    ) -> Result<Vec<AgentPostNotificationItem>, AppError> {
         if actor.role != UserRole::Agent {
             return Err(AppError::forbidden("only agents can view post alerts"));
         }
@@ -142,7 +149,10 @@ impl UserService {
         if !actor.role.can_moderate() {
             return Err(AppError::forbidden("only admins can verify agents"));
         }
-        if !matches!(input.verification_status.as_str(), "pending" | "verified" | "rejected") {
+        if !matches!(
+            input.verification_status.as_str(),
+            "pending" | "verified" | "rejected"
+        ) {
             return Err(AppError::bad_request("invalid verification_status"));
         }
 
@@ -187,9 +197,16 @@ impl UserService {
             },
             UserRole::Seeker => {
                 let active_requests = self.posts.list_active_by_author(actor.id, 10).await?;
-                let active_requests = futures_from_requests(&self.responses, active_requests).await?;
-                let live_video_sessions = self.workflow.list_live_video_sessions_for_user(actor.id, 20).await?;
-                let site_visits = self.workflow.list_site_visit_views_for_user(actor.id, 20).await?;
+                let active_requests =
+                    futures_from_requests(&self.responses, active_requests).await?;
+                let live_video_sessions = self
+                    .workflow
+                    .list_live_video_sessions_for_user(actor.id, 20)
+                    .await?;
+                let site_visits = self
+                    .workflow
+                    .list_site_visit_views_for_user(actor.id, 20)
+                    .await?;
                 DashboardResponse {
                     role: actor.role,
                     profile,
@@ -203,15 +220,27 @@ impl UserService {
                 }
             }
             UserRole::Agent => {
-                let managed_properties = self.properties.list_recent_managed_by_agent(actor.id, 20).await?;
+                let managed_properties = self
+                    .properties
+                    .list_recent_managed_by_agent(actor.id, 20)
+                    .await?;
                 let service_apartments = self
                     .properties
                     .list_service_apartments_managed_by_agent(actor.id, 20)
                     .await?;
-                let unread_post_alerts = self.notifications.list_unread_for_agent(actor.id, 20).await?;
+                let unread_post_alerts = self
+                    .notifications
+                    .list_unread_for_agent(actor.id, 20)
+                    .await?;
                 let request_threads = self.workflow.list_threads_for_user(actor.id, 20).await?;
-                let live_video_sessions = self.workflow.list_live_video_sessions_for_user(actor.id, 20).await?;
-                let site_visits = self.workflow.list_site_visit_views_for_user(actor.id, 20).await?;
+                let live_video_sessions = self
+                    .workflow
+                    .list_live_video_sessions_for_user(actor.id, 20)
+                    .await?;
+                let site_visits = self
+                    .workflow
+                    .list_site_visit_views_for_user(actor.id, 20)
+                    .await?;
 
                 DashboardResponse {
                     role: actor.role,
@@ -248,7 +277,11 @@ impl UserService {
                     .collect::<Vec<_>>();
                 let mut request_items = Vec::new();
                 for property_id in agent_requests {
-                    if let Some(request) = self.workflow.find_property_agent_request(property_id).await? {
+                    if let Some(request) = self
+                        .workflow
+                        .find_property_agent_request(property_id)
+                        .await?
+                    {
                         request_items.push(request);
                     }
                 }

@@ -1,6 +1,6 @@
 use anyhow::Result;
-use redis::{aio::ConnectionManager, AsyncCommands, Client};
-use serde::{de::DeserializeOwned, Serialize};
+use redis::{AsyncCommands, Client, aio::ConnectionManager};
+use serde::{Serialize, de::DeserializeOwned};
 
 #[derive(Clone)]
 pub struct CacheService {
@@ -40,7 +40,9 @@ impl CacheService {
 
     pub async fn invalidate_namespace(&self, namespace: &str) -> Result<()> {
         let mut connection = self.connection().await?;
-        let _: i64 = connection.incr(self.namespace_version_key(namespace), 1).await?;
+        let _: i64 = connection
+            .incr(self.namespace_version_key(namespace), 1)
+            .await?;
         Ok(())
     }
 

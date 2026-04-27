@@ -1,5 +1,5 @@
 use anyhow::Context;
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::time::Duration;
 
 pub async fn create_pool(database_url: &str, max_connections: u32) -> anyhow::Result<PgPool> {
@@ -10,4 +10,3 @@ pub async fn create_pool(database_url: &str, max_connections: u32) -> anyhow::Re
         .await
         .context("failed to connect to postgres")
 }
-

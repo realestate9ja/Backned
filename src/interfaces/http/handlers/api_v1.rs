@@ -1,7 +1,7 @@
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::StatusCode,
-    Json,
 };
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
@@ -16,15 +16,11 @@ use crate::{
         posts::{CreatePostInput, PostListItem, PostQuery},
         properties::{PropertyListItem, PropertyQuery},
         users::{
-            AuthResponse, RegisterUserInput, SendEmailCodeInput, UpdateAgentVerificationInput, User,
-            UserPublicView, UserRole, VerifyEmailCodeInput,
+            AuthResponse, RegisterUserInput, SendEmailCodeInput, UpdateAgentVerificationInput,
+            User, UserPublicView, UserRole, VerifyEmailCodeInput,
         },
     },
-    interfaces::http::{
-        errors::AppError,
-        middleware::auth::AuthUser,
-        state::AppState,
-    },
+    interfaces::http::{errors::AppError, middleware::auth::AuthUser, state::AppState},
 };
 
 #[derive(Debug, Deserialize)]
@@ -557,8 +553,12 @@ pub async fn me(
     let liveness_completed = verification
         .as_ref()
         .map(|item| {
-            matches!(item.status.as_str(), "submitted" | "pending" | "in_review" | "approved" | "verified")
-                && verification_documents.iter().any(|doc| doc.document_type == "selfie")
+            matches!(
+                item.status.as_str(),
+                "submitted" | "pending" | "in_review" | "approved" | "verified"
+            ) && verification_documents
+                .iter()
+                .any(|doc| doc.document_type == "selfie")
         })
         .unwrap_or(false);
     Ok(Json(AuthMeResponse {
@@ -579,7 +579,10 @@ pub async fn select_onboarding_role(
     if user.role != UserRole::Unassigned {
         return Err(AppError::forbidden("role has already been assigned"));
     }
-    if !matches!(payload.role, UserRole::Seeker | UserRole::Agent | UserRole::Landlord) {
+    if !matches!(
+        payload.role,
+        UserRole::Seeker | UserRole::Agent | UserRole::Landlord
+    ) {
         return Err(AppError::bad_request("invalid onboarding role"));
     }
 
@@ -599,8 +602,12 @@ pub async fn select_onboarding_role(
     let liveness_completed = verification
         .as_ref()
         .map(|item| {
-            matches!(item.status.as_str(), "submitted" | "pending" | "in_review" | "approved" | "verified")
-                && verification_documents.iter().any(|doc| doc.document_type == "selfie")
+            matches!(
+                item.status.as_str(),
+                "submitted" | "pending" | "in_review" | "approved" | "verified"
+            ) && verification_documents
+                .iter()
+                .any(|doc| doc.document_type == "selfie")
         })
         .unwrap_or(false);
 
@@ -636,7 +643,9 @@ pub async fn update_password(
     Json(payload): Json<UpdatePasswordInput>,
 ) -> Result<StatusCode, AppError> {
     if payload.new_password != payload.new_password_confirm {
-        return Err(AppError::bad_request("password confirmation does not match"));
+        return Err(AppError::bad_request(
+            "password confirmation does not match",
+        ));
     }
 
     crate::utils::validation::validate_password(&payload.new_password)?;
@@ -796,8 +805,12 @@ pub async fn upsert_onboarding_profile(
     let liveness_completed = verification
         .as_ref()
         .map(|item| {
-            matches!(item.status.as_str(), "submitted" | "pending" | "in_review" | "approved" | "verified")
-                && verification_documents.iter().any(|doc| doc.document_type == "selfie")
+            matches!(
+                item.status.as_str(),
+                "submitted" | "pending" | "in_review" | "approved" | "verified"
+            ) && verification_documents
+                .iter()
+                .any(|doc| doc.document_type == "selfie")
         })
         .unwrap_or(false);
 
@@ -816,7 +829,9 @@ pub async fn get_agent_notification_settings(
     AuthUser(user): AuthUser,
 ) -> Result<Json<crate::domain::users::AgentNotificationSettingsView>, AppError> {
     if user.role != UserRole::Agent {
-        return Err(AppError::forbidden("only agents can view notification settings"));
+        return Err(AppError::forbidden(
+            "only agents can view notification settings",
+        ));
     }
 
     let refreshed = state
@@ -849,8 +864,13 @@ pub async fn create_verification(
     AuthUser(user): AuthUser,
     Json(payload): Json<CreateVerificationInput>,
 ) -> Result<(StatusCode, Json<VerificationView>), AppError> {
-    if !matches!(user.role, UserRole::Seeker | UserRole::Agent | UserRole::Landlord) {
-        return Err(AppError::forbidden("only seeker, agent, and landlord accounts can submit verification"));
+    if !matches!(
+        user.role,
+        UserRole::Seeker | UserRole::Agent | UserRole::Landlord
+    ) {
+        return Err(AppError::forbidden(
+            "only seeker, agent, and landlord accounts can submit verification",
+        ));
     }
 
     let verification = sqlx::query_as::<_, VerificationView>(
@@ -1076,7 +1096,9 @@ pub async fn create_offer(
     Json(payload): Json<CreateOfferInput>,
 ) -> Result<(StatusCode, Json<OfferView>), AppError> {
     if !matches!(user.role, UserRole::Agent | UserRole::Landlord) {
-        return Err(AppError::forbidden("only agents and landlords can send offers"));
+        return Err(AppError::forbidden(
+            "only agents and landlords can send offers",
+        ));
     }
     if payload.message.trim().is_empty() {
         return Err(AppError::bad_request("message is required"));
@@ -1096,22 +1118,25 @@ pub async fn create_offer(
     .fetch_one(&state.pool)
     .await?;
     if !can_use_property {
-        return Err(AppError::forbidden("you can only send offers with properties you own or manage"));
+        return Err(AppError::forbidden(
+            "you can only send offers with properties you own or manage",
+        ));
     }
 
-    let (seeker_user_id, request_title, property_title) = sqlx::query_as::<_, (Uuid, String, String)>(
-        r#"
+    let (seeker_user_id, request_title, property_title) =
+        sqlx::query_as::<_, (Uuid, String, String)>(
+            r#"
         SELECT p.author_id, p.request_title, property.title
         FROM posts p
         INNER JOIN properties property ON property.id = $2
         WHERE p.id = $1
         "#,
-    )
-    .bind(payload.need_post_id)
-    .bind(payload.property_id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or_else(|| AppError::not_found("need post not found"))?;
+        )
+        .bind(payload.need_post_id)
+        .bind(payload.property_id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| AppError::not_found("need post not found"))?;
 
     let offer = sqlx::query_as::<_, OfferView>(
         r#"
@@ -1318,7 +1343,9 @@ pub async fn delete_saved_property(
     Path(property_id): Path<Uuid>,
 ) -> Result<StatusCode, AppError> {
     if user.role != UserRole::Seeker {
-        return Err(AppError::forbidden("only seekers can remove saved properties"));
+        return Err(AppError::forbidden(
+            "only seekers can remove saved properties",
+        ));
     }
     sqlx::query("DELETE FROM saved_properties WHERE user_id = $1 AND property_id = $2")
         .bind(user.id)
@@ -1333,7 +1360,9 @@ pub async fn list_saved_properties(
     AuthUser(user): AuthUser,
 ) -> Result<Json<Vec<Value>>, AppError> {
     if user.role != UserRole::Seeker {
-        return Err(AppError::forbidden("only seekers can view saved properties"));
+        return Err(AppError::forbidden(
+            "only seekers can view saved properties",
+        ));
     }
     let items = sqlx::query(
         r#"
@@ -1365,19 +1394,26 @@ pub async fn list_saved_properties(
     .bind(user.id)
     .fetch_all(&state.pool)
     .await?;
-    Ok(Json(items.into_iter().map(|row| json!({
-        "id": row.get::<Uuid, _>("id"),
-        "userId": row.get::<Uuid, _>("user_id"),
-        "propertyId": row.get::<Uuid, _>("property_id"),
-        "createdAt": row.get::<DateTime<Utc>, _>("created_at"),
-        "title": row.get::<String, _>("title"),
-        "price": row.get::<i64, _>("price"),
-        "location": row.get::<String, _>("location"),
-        "images": row.get::<Vec<String>, _>("images"),
-        "ownerName": row.get::<String, _>("owner_name"),
-        "agentName": row.try_get::<Option<String>, _>("agent_name").ok().flatten(),
-        "viewCount": row.get::<i64, _>("view_count")
-    })).collect()))
+    Ok(Json(
+        items
+            .into_iter()
+            .map(|row| {
+                json!({
+                    "id": row.get::<Uuid, _>("id"),
+                    "userId": row.get::<Uuid, _>("user_id"),
+                    "propertyId": row.get::<Uuid, _>("property_id"),
+                    "createdAt": row.get::<DateTime<Utc>, _>("created_at"),
+                    "title": row.get::<String, _>("title"),
+                    "price": row.get::<i64, _>("price"),
+                    "location": row.get::<String, _>("location"),
+                    "images": row.get::<Vec<String>, _>("images"),
+                    "ownerName": row.get::<String, _>("owner_name"),
+                    "agentName": row.try_get::<Option<String>, _>("agent_name").ok().flatten(),
+                    "viewCount": row.get::<i64, _>("view_count")
+                })
+            })
+            .collect(),
+    ))
 }
 
 pub async fn create_review(
@@ -1395,10 +1431,11 @@ pub async fn create_review(
         return Err(AppError::bad_request("you cannot review yourself"));
     }
 
-    let reviewee_exists = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
-        .bind(payload.reviewee_id)
-        .fetch_one(&state.pool)
-        .await?;
+    let reviewee_exists =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
+            .bind(payload.reviewee_id)
+            .fetch_one(&state.pool)
+            .await?;
     if !reviewee_exists {
         return Err(AppError::not_found("reviewee not found"));
     }
@@ -1411,9 +1448,12 @@ pub async fn create_review(
         .fetch_optional(&state.pool)
         .await?
         .ok_or_else(|| AppError::not_found("property not found"))?;
-        let valid_target = payload.reviewee_id == property_owner.0 || Some(payload.reviewee_id) == property_owner.1;
+        let valid_target = payload.reviewee_id == property_owner.0
+            || Some(payload.reviewee_id) == property_owner.1;
         if !valid_target {
-            return Err(AppError::bad_request("reviewee does not match this property"));
+            return Err(AppError::bad_request(
+                "reviewee does not match this property",
+            ));
         }
     }
 
@@ -1465,7 +1505,9 @@ pub async fn create_review(
     };
 
     if !has_context {
-        return Err(AppError::forbidden("reviews require an offer or booking history with this agent or property"));
+        return Err(AppError::forbidden(
+            "reviews require an offer or booking history with this agent or property",
+        ));
     }
 
     let review = sqlx::query_scalar::<_, Value>(
@@ -1495,10 +1537,12 @@ pub async fn create_review(
         .fetch_one(&state.pool)
         .await?;
         if low_review_count >= 3 {
-            sqlx::query("UPDATE properties SET status = 'suspended', updated_at = NOW() WHERE id = $1")
-                .bind(property_id)
-                .execute(&state.pool)
-                .await?;
+            sqlx::query(
+                "UPDATE properties SET status = 'suspended', updated_at = NOW() WHERE id = $1",
+            )
+            .bind(property_id)
+            .execute(&state.pool)
+            .await?;
         }
     }
 
@@ -1561,7 +1605,10 @@ pub async fn create_booking(
         return Err(AppError::forbidden("only seekers can create bookings"));
     }
 
-    if !matches!(payload.booking_type.as_str(), "viewing" | "hold" | "move_in" | "shortlet") {
+    if !matches!(
+        payload.booking_type.as_str(),
+        "viewing" | "hold" | "move_in" | "shortlet"
+    ) {
         return Err(AppError::bad_request("invalid booking_type"));
     }
 
@@ -1575,14 +1622,16 @@ pub async fn create_booking(
           AND o.status NOT IN ('declined', 'withdrawn', 'expired')
         "#,
     )
-        .bind(payload.offer_id)
-        .bind(user.id)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or_else(|| AppError::not_found("offer not found"))?;
+    .bind(payload.offer_id)
+    .bind(user.id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::not_found("offer not found"))?;
     let (provider_user_id, offer_property_id) = offer_context;
     if offer_property_id != payload.property_id {
-        return Err(AppError::bad_request("booking property does not match offer"));
+        return Err(AppError::bad_request(
+            "booking property does not match offer",
+        ));
     }
 
     let booking_type = payload.booking_type.clone();
@@ -1620,11 +1669,12 @@ pub async fn create_booking(
     .execute(&state.pool)
     .await?;
 
-    let property_title = sqlx::query_scalar::<_, String>("SELECT title FROM properties WHERE id = $1")
-        .bind(payload.property_id)
-        .fetch_optional(&state.pool)
-        .await?
-        .unwrap_or_else(|| "property".to_string());
+    let property_title =
+        sqlx::query_scalar::<_, String>("SELECT title FROM properties WHERE id = $1")
+            .bind(payload.property_id)
+            .fetch_optional(&state.pool)
+            .await?
+            .unwrap_or_else(|| "property".to_string());
 
     insert_notification(
         &state.pool,
@@ -1676,10 +1726,15 @@ pub async fn update_booking(
     Json(payload): Json<UpdateBookingInput>,
 ) -> Result<Json<BookingView>, AppError> {
     if payload.scheduled_for.is_none() && payload.notes.is_none() && payload.status.is_none() {
-        return Err(AppError::bad_request("at least one booking field must be provided"));
+        return Err(AppError::bad_request(
+            "at least one booking field must be provided",
+        ));
     }
     if let Some(status) = payload.status.as_deref() {
-        if !matches!(status, "pending" | "confirmed" | "completed" | "cancelled" | "no_show") {
+        if !matches!(
+            status,
+            "pending" | "confirmed" | "completed" | "cancelled" | "no_show"
+        ) {
             return Err(AppError::bad_request("invalid booking status"));
         }
     }
@@ -1744,7 +1799,11 @@ pub async fn update_booking(
     } else {
         "/seeker/bookings"
     };
-    let actor_label = if user.role == UserRole::Agent { "Agent" } else { "Seeker" };
+    let actor_label = if user.role == UserRole::Agent {
+        "Agent"
+    } else {
+        "Seeker"
+    };
 
     insert_notification(
         &state.pool,
@@ -1836,7 +1895,9 @@ pub async fn list_landlord_properties(
     AuthUser(user): AuthUser,
 ) -> Result<Json<Vec<PropertyListItem>>, AppError> {
     if user.role != UserRole::Landlord {
-        return Err(AppError::forbidden("only landlords can view landlord properties"));
+        return Err(AppError::forbidden(
+            "only landlords can view landlord properties",
+        ));
     }
     let items = sqlx::query_as::<_, PropertyListItem>(
         r#"
@@ -1984,13 +2045,13 @@ pub async fn admin_metrics_overview(
     AuthUser(user): AuthUser,
 ) -> Result<Json<AdminOverviewMetrics>, AppError> {
     ensure_admin(&user)?;
-    let total_properties =
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM properties").fetch_one(&state.pool).await?;
-    let active_users = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM users WHERE is_banned = FALSE",
-    )
-    .fetch_one(&state.pool)
-    .await?;
+    let total_properties = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM properties")
+        .fetch_one(&state.pool)
+        .await?;
+    let active_users =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE is_banned = FALSE")
+            .fetch_one(&state.pool)
+            .await?;
     let monthly_revenue = sqlx::query_scalar::<_, Option<i64>>(
         "SELECT COALESCE(SUM(amount), 0)::bigint FROM transactions WHERE status = 'succeeded' AND created_at >= date_trunc('month', NOW())",
     )
@@ -2162,7 +2223,10 @@ pub async fn admin_update_verification(
         "rejected" => "rejected",
         other => other,
     };
-    if !matches!(mapped_status, "submitted" | "in_review" | "approved" | "rejected" | "expired") {
+    if !matches!(
+        mapped_status,
+        "submitted" | "in_review" | "approved" | "rejected" | "expired"
+    ) {
         return Err(AppError::bad_request("invalid verification_status"));
     }
 
@@ -2250,6 +2314,8 @@ pub async fn admin_update_verification(
             "Your identity verification status changed."
         },
         Some(match user_record.role {
+            UserRole::Agent if legacy_status == "rejected" => "/onboarding",
+            UserRole::Landlord if legacy_status == "rejected" => "/onboarding",
             UserRole::Agent => "/provider/settings",
             UserRole::Landlord => "/landlord/settings",
             UserRole::Seeker => "/seeker/settings",
@@ -2272,19 +2338,25 @@ pub async fn seeker_dashboard_overview(
     AuthUser(user): AuthUser,
 ) -> Result<Json<Value>, AppError> {
     if user.role != UserRole::Seeker {
-        return Err(AppError::forbidden("only seekers can view seeker dashboard"));
+        return Err(AppError::forbidden(
+            "only seekers can view seeker dashboard",
+        ));
     }
 
     // Check verification status for seekers
     let verification_status = sqlx::query_scalar::<_, Option<String>>(
-        "SELECT verification_status FROM users WHERE id = $1"
+        "SELECT verification_status FROM users WHERE id = $1",
     )
-        .bind(&user.id)
-        .fetch_one(&state.pool)
-        .await?;
+    .bind(&user.id)
+    .fetch_one(&state.pool)
+    .await?;
 
-    if verification_status.as_deref() != Some("verified") && verification_status.as_deref() != Some("approved") {
-        return Err(AppError::forbidden("please complete your facial verification to access the dashboard"));
+    if verification_status.as_deref() != Some("verified")
+        && verification_status.as_deref() != Some("approved")
+    {
+        return Err(AppError::forbidden(
+            "please complete your facial verification to access the dashboard",
+        ));
     }
 
     let need_count =
@@ -2331,14 +2403,18 @@ pub async fn agent_dashboard_overview(
 
     // Check verification status for agents
     let verification_status = sqlx::query_scalar::<_, Option<String>>(
-        "SELECT verification_status FROM users WHERE id = $1"
+        "SELECT verification_status FROM users WHERE id = $1",
     )
-        .bind(&user.id)
-        .fetch_one(&state.pool)
-        .await?;
+    .bind(&user.id)
+    .fetch_one(&state.pool)
+    .await?;
 
-    if verification_status.as_deref() != Some("verified") && verification_status.as_deref() != Some("approved") {
-        return Err(AppError::forbidden("please complete your identity verification and facial verification to access the dashboard"));
+    if verification_status.as_deref() != Some("verified")
+        && verification_status.as_deref() != Some("approved")
+    {
+        return Err(AppError::forbidden(
+            "please complete your identity verification and facial verification to access the dashboard",
+        ));
     }
 
     let listing_count = sqlx::query_scalar::<_, i64>(
@@ -2360,7 +2436,9 @@ pub async fn agent_dashboard_overview(
     .fetch_one(&state.pool)
     .await?
     .unwrap_or(0);
-    let top_listings = list_agent_properties(State(state.clone()), AuthUser(user.clone())).await?.0;
+    let top_listings = list_agent_properties(State(state.clone()), AuthUser(user.clone()))
+        .await?
+        .0;
     let recent_leads = list_agent_leads(State(state), AuthUser(user)).await?.0;
 
     Ok(Json(json!({
@@ -2383,22 +2461,25 @@ pub async fn landlord_dashboard_overview(
 
     // Check verification status for landlords
     let verification_status = sqlx::query_scalar::<_, Option<String>>(
-        "SELECT verification_status FROM users WHERE id = $1"
+        "SELECT verification_status FROM users WHERE id = $1",
     )
-        .bind(&user.id)
-        .fetch_one(&state.pool)
-        .await?;
-
-    if verification_status.as_deref() != Some("verified") && verification_status.as_deref() != Some("approved") {
-        return Err(AppError::forbidden("please complete your identity verification and facial verification to access the dashboard"));
-    }
-
-    let property_count = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM properties WHERE owner_id = $1",
-    )
-    .bind(user.id)
+    .bind(&user.id)
     .fetch_one(&state.pool)
     .await?;
+
+    if verification_status.as_deref() != Some("verified")
+        && verification_status.as_deref() != Some("approved")
+    {
+        return Err(AppError::forbidden(
+            "please complete your identity verification and facial verification to access the dashboard",
+        ));
+    }
+
+    let property_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM properties WHERE owner_id = $1")
+            .bind(user.id)
+            .fetch_one(&state.pool)
+            .await?;
     let unit_count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM units u INNER JOIN properties p ON p.id = u.property_id WHERE p.owner_id = $1",
     )
@@ -2411,7 +2492,9 @@ pub async fn landlord_dashboard_overview(
     .bind(user.id)
     .fetch_one(&state.pool)
     .await?;
-    let maintenance_queue = list_landlord_maintenance(State(state.clone()), AuthUser(user.clone())).await?.0;
+    let maintenance_queue = list_landlord_maintenance(State(state.clone()), AuthUser(user.clone()))
+        .await?
+        .0;
 
     Ok(Json(json!({
         "stats": {
@@ -2515,7 +2598,9 @@ pub async fn update_agent_property(
     Json(payload): Json<UpdateAgentPropertyInput>,
 ) -> Result<Json<Value>, AppError> {
     if user.role != UserRole::Agent {
-        return Err(AppError::forbidden("only agents can update agent properties"));
+        return Err(AppError::forbidden(
+            "only agents can update agent properties",
+        ));
     }
     let updated = sqlx::query(
         r#"
@@ -2708,7 +2793,12 @@ pub async fn create_landlord_maintenance(
 pub async fn uploads_presign(
     Json(payload): Json<UploadPresignInput>,
 ) -> Result<Json<Value>, AppError> {
-    let file_key = format!("{}/{}-{}", payload.category, Uuid::new_v4(), payload.filename);
+    let file_key = format!(
+        "{}/{}-{}",
+        payload.category,
+        Uuid::new_v4(),
+        payload.filename
+    );
     let file_url = format!("https://uploads.verinest.local/{}", file_key);
     let upload_url = format!("https://uploads.verinest.local/presigned/{}", file_key);
     Ok(Json(json!({
@@ -2863,14 +2953,15 @@ pub async fn create_admin_announcement(
     .fetch_one(&state.pool)
     .await?;
 
-    let target_roles: Option<Vec<&'static str>> = match payload.audience.trim().to_lowercase().as_str() {
-        "all" | "all users" => None,
-        "seekers" | "seekers only" | "tenants" => Some(vec!["seeker"]),
-        "providers" | "providers only" => Some(vec!["agent", "landlord"]),
-        "agents" | "agents only" => Some(vec!["agent"]),
-        "landlords" | "landlords only" => Some(vec!["landlord"]),
-        _ => None,
-    };
+    let target_roles: Option<Vec<&'static str>> =
+        match payload.audience.trim().to_lowercase().as_str() {
+            "all" | "all users" => None,
+            "seekers" | "seekers only" | "tenants" => Some(vec!["seeker"]),
+            "providers" | "providers only" => Some(vec!["agent", "landlord"]),
+            "agents" | "agents only" => Some(vec!["agent"]),
+            "landlords" | "landlords only" => Some(vec!["landlord"]),
+            _ => None,
+        };
 
     let recipients = if let Some(roles) = target_roles {
         sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE role::text = ANY($1)")
@@ -2980,30 +3071,39 @@ async fn fetch_profile(pool: &PgPool, user_id: Uuid) -> Result<Option<ProfileVie
 async fn fetch_role_profile(pool: &PgPool, user: &User) -> Result<Option<Value>, AppError> {
     let value = match user.role {
         UserRole::Unassigned => None,
-        UserRole::Seeker => sqlx::query_scalar::<_, Value>(
-            "SELECT to_jsonb(sp) FROM seeker_profiles sp WHERE sp.user_id = $1",
-        )
-        .bind(user.id)
-        .fetch_optional(pool)
-        .await?,
-        UserRole::Agent => sqlx::query_scalar::<_, Value>(
-            "SELECT to_jsonb(ap) FROM agent_profiles ap WHERE ap.user_id = $1",
-        )
-        .bind(user.id)
-        .fetch_optional(pool)
-        .await?,
-        UserRole::Landlord => sqlx::query_scalar::<_, Value>(
-            "SELECT to_jsonb(lp) FROM landlord_profiles lp WHERE lp.user_id = $1",
-        )
-        .bind(user.id)
-        .fetch_optional(pool)
-        .await?,
+        UserRole::Seeker => {
+            sqlx::query_scalar::<_, Value>(
+                "SELECT to_jsonb(sp) FROM seeker_profiles sp WHERE sp.user_id = $1",
+            )
+            .bind(user.id)
+            .fetch_optional(pool)
+            .await?
+        }
+        UserRole::Agent => {
+            sqlx::query_scalar::<_, Value>(
+                "SELECT to_jsonb(ap) FROM agent_profiles ap WHERE ap.user_id = $1",
+            )
+            .bind(user.id)
+            .fetch_optional(pool)
+            .await?
+        }
+        UserRole::Landlord => {
+            sqlx::query_scalar::<_, Value>(
+                "SELECT to_jsonb(lp) FROM landlord_profiles lp WHERE lp.user_id = $1",
+            )
+            .bind(user.id)
+            .fetch_optional(pool)
+            .await?
+        }
         UserRole::Admin => None,
     };
     Ok(value)
 }
 
-async fn fetch_latest_verification(pool: &PgPool, user_id: Uuid) -> Result<Option<VerificationView>, AppError> {
+async fn fetch_latest_verification(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Option<VerificationView>, AppError> {
     let verification = sqlx::query_as::<_, VerificationView>(
         r#"
         SELECT id, user_id, status, submitted_at, reviewed_at, reviewed_by, rejection_reason,
@@ -3040,7 +3140,9 @@ async fn fetch_verification_documents(
 
 fn ensure_landlord(user: &User) -> Result<(), AppError> {
     if user.role != UserRole::Landlord {
-        return Err(AppError::forbidden("only landlords can access this endpoint"));
+        return Err(AppError::forbidden(
+            "only landlords can access this endpoint",
+        ));
     }
     Ok(())
 }
