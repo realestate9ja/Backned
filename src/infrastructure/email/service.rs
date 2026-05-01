@@ -141,7 +141,7 @@ impl MailService {
     ) -> OutboundEmail {
         OutboundEmail {
             to,
-            subject: "Verify your VeriNest email".to_string(),
+            subject: "Verify your Verinest email".to_string(),
             text: format!(
                 "Hello {full_name}, verify your email by opening this link: {verification_link}"
             ),
@@ -160,25 +160,25 @@ impl MailService {
           </div>
           <div style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:600;color:#1A1814;">Veri<span style="font-style:italic;color:#C4714A;">nest</span></div>
         </div>
-        <div style="font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:#C4714A;background:#F0E0D4;padding:5px 10px;border-radius:20px;">Welcome</div>
+        <div style="font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:#C4714A;background:#F0E0D4;padding:5px 10px;border-radius:20px;">Security</div>
       </div>
       <div style="padding:40px 40px 36px;background:#C4714A;">
-        <p style="font-size:9px;letter-spacing:0.28em;text-transform:uppercase;margin:0 0 12px;color:rgba(255,255,255,0.68);">You're in</p>
+        <p style="font-size:9px;letter-spacing:0.28em;text-transform:uppercase;margin:0 0 12px;color:rgba(255,255,255,0.68);">Email Verification</p>
         <h1 style="font-family:'Cormorant Garamond',serif;font-size:34px;font-weight:600;line-height:1.15;margin:0 0 12px;color:#FFFFFF;">Welcome to<br>Veri<em>nest.</em></h1>
         <p style="font-size:13px;line-height:1.65;margin:0;color:rgba(255,255,255,0.78);">Before you continue, verify your email address so we can secure your account and protect your activity on Verinest.</p>
       </div>
       <div style="padding:36px 40px;">
         <p style="font-size:15px;font-weight:500;color:#1A1814;margin:0 0 14px;">Hi {full_name},</p>
-        <p style="font-size:13.5px;color:#5A5248;line-height:1.75;margin:0 0 16px;">Your account has been created successfully. To activate it fully, confirm your email address using the secure button below.</p>
-        <div style="margin:24px 0;">
-          <a href="{verification_link}" style="display:inline-block;background:#C4714A;color:#ffffff;text-decoration:none;font-size:12px;font-weight:500;padding:14px 22px;border-radius:999px;letter-spacing:0.04em;">Verify My Email →</a>
+        <p style="font-size:13.5px;color:#5A5248;line-height:1.75;margin:0 0 16px;">Your account has been created successfully. To activate it fully, confirm your email address using the secure link below.</p>
+        <div style="margin:28px 0;">
+          <a href="{verification_link}" style="display:inline-block;background:#C4714A;color:#ffffff;text-decoration:none;font-size:13px;font-weight:500;letter-spacing:0.05em;padding:15px 32px;border-radius:12px;">Verify My Email</a>
         </div>
-        <div style="height:1px;background:#EFE9E2;margin:24px 0;"></div>
-        <p style="font-size:12px;color:#9A8F84;line-height:1.7;margin:0;">If the button does not work, copy and open this link:<br><span style="color:#1A1814;word-break:break-all;">{verification_link}</span></p>
+        <div style="height:1px;background:#EFE9E2;margin:28px 0;"></div>
+        <p style="font-size:12px;color:#9A8F84;line-height:1.7;margin:0;">If the button doesn't work, copy and paste this link in your browser:<br><span style="color:#1A1814;word-break:break-all;font-size:11px;">{verification_link}</span></p>
       </div>
       <div style="padding:24px 40px 30px;background:#FAF7F3;border-top:1px solid #EDE8E0;">
         <div style="font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:600;color:#1A1814;margin-bottom:10px;">Veri<span style="font-style:italic;color:#C4714A;">nest</span></div>
-        <p style="font-size:11px;line-height:1.7;color:#9A8F84;margin:0;">If you have any questions getting started, reply to this email directly. A real person will respond.</p>
+        <p style="font-size:11px;line-height:1.7;color:#9A8F84;margin:0;">If you have any questions, reply to this email directly. A real person will respond — not a bot.</p>
       </div>
     </div>
   </body>
@@ -196,42 +196,72 @@ impl MailService {
             ),
             html: format!(
                 r#"<!DOCTYPE html>
-<html lang="en">
-  <body style="margin:0;padding:24px;background:#E8E2DA;font-family:'DM Sans',Arial,sans-serif;">
-    <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,0.10);">
-      <div style="background:#FAF7F3;padding:28px 40px 24px;border-bottom:1px solid #EDE8E0;display:flex;align-items:center;justify-content:space-between;">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <div style="width:36px;height:36px;background:#C4714A;border-radius:10px;display:flex;align-items:center;justify-content:center;">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-              <path d="M3 11L12 3l9 8" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-              <rect x="9" y="13" width="6" height="8" rx="3" fill="white"/>
-            </svg>
-          </div>
-          <div style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:600;color:#1A1814;">Veri<span style="font-style:italic;color:#C4714A;">nest</span></div>
-        </div>
-        <div style="font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:#C4714A;background:#F0E0D4;padding:5px 10px;border-radius:20px;">Welcome</div>
-      </div>
-      <div style="padding:40px 40px 36px;background:#C4714A;">
-        <p style="font-size:9px;letter-spacing:0.28em;text-transform:uppercase;margin:0 0 12px;color:rgba(255,255,255,0.68);">You're in</p>
-        <h1 style="font-family:'Cormorant Garamond',serif;font-size:34px;font-weight:600;line-height:1.15;margin:0 0 12px;color:#FFFFFF;">Welcome to<br>Veri<em>nest.</em></h1>
-        <p style="font-size:13px;line-height:1.65;margin:0;color:rgba(255,255,255,0.78);">Nigeria's verified rental marketplace, where serious seekers meet verified providers.</p>
-      </div>
-      <div style="padding:36px 40px;">
-        <p style="font-size:15px;font-weight:500;color:#1A1814;margin:0 0 14px;">Hi {full_name},</p>
-        <p style="font-size:13.5px;color:#5A5248;line-height:1.75;margin:0 0 14px;">You've just joined a platform built to make renting in Nigeria less risky, less stressful, and much faster.</p>
-        <p style="font-size:13.5px;color:#5A5248;line-height:1.75;margin:0 0 20px;">Post what you need, receive responses from verified providers, and manage everything from one place.</p>
-        <div style="margin:24px 0;">
-          <a href="{action_url}" style="display:inline-block;background:#C4714A;color:#ffffff;text-decoration:none;font-size:12px;font-weight:500;padding:14px 22px;border-radius:999px;letter-spacing:0.04em;">Open My Dashboard →</a>
-        </div>
-        <div style="height:1px;background:#EFE9E2;margin:24px 0;"></div>
-        <p style="font-size:12px;color:#9A8F84;line-height:1.7;margin:0;">If you have any questions getting started, reply to this email directly. A real person will respond.</p>
-      </div>
-      <div style="padding:24px 40px 30px;background:#FAF7F3;border-top:1px solid #EDE8E0;">
-        <div style="font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:600;color:#1A1814;margin-bottom:10px;">Veri<span style="font-style:italic;color:#C4714A;">nest</span></div>
-        <p style="font-size:11px;line-height:1.7;color:#9A8F84;margin:0;">Verinest helps seekers, agents, and landlords connect through verified listings, clearer pricing, and faster rental matching across Nigeria.</p>
-      </div>
-    </div>
-  </body>
+<html lang="en" style="margin:0;padding:0;">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body {{ margin: 0; padding: 20px; background-color: #E8E2DA; font-family: 'DM Sans', Arial, sans-serif; }}
+.container {{ max-width: 580px; margin: 0 auto; background: #FFFFFF; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); overflow: hidden; }}
+.header {{ background: #F9F6F1; padding: 24px 32px; border-bottom: 1px solid #EEE8E1; display: flex; justify-content: space-between; align-items: center; }}
+.logo-section {{ display: flex; align-items: center; gap: 12px; }}
+.logo {{ width: 44px; height: 44px; background: #C4714A; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }}
+.logo svg {{ width: 24px; height: 24px; }}
+.brand {{ font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 600; color: #1A1814; letter-spacing: -0.3px; }}
+.brand em {{ font-style: italic; color: #C4714A; }}
+.badge {{ font-size: 8px; letter-spacing: 0.15em; text-transform: uppercase; color: #C4714A; background: #FEF1E8; padding: 6px 12px; border-radius: 20px; font-weight: 500; white-space: nowrap; }}
+.hero {{ background: #C4714A; padding: 40px 32px; color: white; }}
+.hero-tag {{ font-size: 8px; letter-spacing: 0.2em; text-transform: uppercase; margin: 0 0 12px; color: rgba(255,255,255,0.75); font-weight: 500; }}
+.hero h1 {{ font-family: 'Cormorant Garamond', serif; font-size: 36px; font-weight: 600; margin: 0 0 12px; line-height: 1.2; }}
+.hero h1 em {{ font-style: italic; }}
+.hero p {{ font-size: 13px; line-height: 1.65; margin: 0; color: rgba(255,255,255,0.78); }}
+.content {{ padding: 32px 32px; }}
+.content p {{ margin: 0 0 14px; font-size: 13px; line-height: 1.75; color: #5A5248; }}
+.content p.intro {{ font-size: 14px; font-weight: 500; color: #1A1814; margin-bottom: 16px; }}
+.cta-button {{ display: inline-block; background: #C4714A; color: #FFFFFF; text-decoration: none; font-size: 12px; font-weight: 600; padding: 13px 24px; border-radius: 8px; letter-spacing: 0.04em; margin: 24px 0; }}
+.divider {{ height: 1px; background: #EEE8E1; margin: 20px 0; }}
+.footer-section {{ padding: 24px 32px; background: #1A1A1A; border-top: 1px solid #EEE8E1; }}
+.footer-brand {{ font-family: 'Cormorant Garamond', serif; font-size: 18px; font-weight: 600; color: #FFFFFF; margin-bottom: 8px; }}
+.footer-brand em {{ font-style: italic; color: #C4714A; }}
+.footer-text {{ font-size: 11px; line-height: 1.7; color: rgba(255,255,255,0.65); margin: 0; }}
+.footer-links {{ display: flex; gap: 16px; margin-top: 12px; }}
+.footer-links a {{ font-size: 11px; color: #C4714A; text-decoration: none; }}
+.copyright {{ font-size: 10px; color: rgba(255,255,255,0.45); margin: 12px 0 0; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); }}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="header">
+<div class="logo-section">
+<div class="logo">
+<svg viewBox="0 0 24 24" fill="none">
+<path d="M3 11L12 3l9 8" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="9" y="13" width="6" height="8" rx="3" fill="white"/>
+</svg>
+</div>
+<div class="brand">Veri<em>nest</em></div>
+</div>
+<div class="badge">Welcome</div>
+</div>
+<div class="hero">
+<p class="hero-tag">You're in</p>
+<h1>Welcome to<br>Veri<em>nest.</em></h1>
+<p>Nigeria's verified rental marketplace, where serious seekers meet verified providers.</p>
+</div>
+<div class="content">
+<p class="intro">Hi {full_name},</p>
+<p>You've just joined a platform built to make renting in Nigeria less risky, less stressful, and much faster.</p>
+<p>Post what you need, receive responses from verified providers, and manage everything from one place.</p>
+<a href="{action_url}" class="cta-button">Open My Dashboard →</a>
+<div class="divider"></div>
+<p>If you have any questions getting started, reply to this email directly. A real person will respond.</p>
+</div>
+<div class="footer-section">
+<div class="footer-brand">Veri<em>nest</em></div>
+<p class="footer-text">Verinest helps seekers, agents, and landlords connect through verified listings, clearer pricing, and faster rental matching across Nigeria.</p>
+</div>
+</div>
+</body>
 </html>"#
             ),
         }
@@ -249,49 +279,86 @@ impl MailService {
             text: format!("Hello {full_name}, your VeriNest verification code is {code}."),
             html: format!(
                 r#"<!DOCTYPE html>
-<html lang="en">
-  <body style="margin:0;padding:24px;background:#E8E2DA;font-family:'DM Sans',Arial,sans-serif;">
-    <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,0.10);">
-      <div style="background:#FAF7F3;padding:28px 40px 24px;border-bottom:1px solid #EDE8E0;display:flex;align-items:center;justify-content:space-between;">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <div style="width:36px;height:36px;background:#C4714A;border-radius:10px;display:flex;align-items:center;justify-content:center;">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-              <path d="M3 11L12 3l9 8" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-              <rect x="9" y="13" width="6" height="8" rx="3" fill="white"/>
-            </svg>
-          </div>
-          <div style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:600;color:#1A1814;">Veri<span style="font-style:italic;color:#C4714A;">nest</span></div>
-        </div>
-        <div style="font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:#C4714A;background:#F0E0D4;padding:5px 10px;border-radius:20px;">Security</div>
-      </div>
-      <div style="padding:40px 40px 36px;background:#161412;">
-        <p style="font-size:9px;letter-spacing:0.28em;text-transform:uppercase;margin:0 0 12px;color:rgba(255,255,255,0.68);">Verification Code</p>
-        <h1 style="font-family:'Cormorant Garamond',serif;font-size:34px;font-weight:600;line-height:1.15;margin:0 0 12px;color:#FFFFFF;">Confirm it's<br><em>really you.</em></h1>
-        <p style="font-size:13px;line-height:1.65;margin:0;color:rgba(255,255,255,0.78);">Use the code below to verify your email address and secure your account.</p>
-      </div>
-      <div style="padding:36px 40px;">
-        <p style="font-size:15px;font-weight:500;color:#1A1814;margin:0 0 14px;">Hi {full_name},</p>
-        <p style="font-size:13.5px;color:#5A5248;line-height:1.75;margin:0 0 18px;">You requested a verification code for your Verinest account. Enter this code in the app to continue.</p>
-        <div style="background:#FAF7F3;border:1px solid #EDE8E0;border-radius:18px;padding:24px;text-align:center;margin:0 0 18px;">
-          <p style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:#9A8F84;margin:0 0 10px;">Your verification code</p>
-          <div style="font-family:'Cormorant Garamond',serif;font-size:38px;font-weight:600;color:#1A1814;letter-spacing:0.18em;">{code}</div>
-          <p style="font-size:12px;color:#9A8F84;margin:10px 0 0;">Expires in 10 minutes · Do not share this code</p>
-        </div>
-        <div style="background:#FFF8F0;border-left:4px solid #C4714A;padding:14px 18px;border-radius:0 10px 10px 0;margin-bottom:20px;">
-          <p style="font-size:12px;color:#7A4020;line-height:1.6;margin:0;">Verinest will never ask for this code by phone or WhatsApp. If someone is asking for it, do not share it.</p>
-        </div>
-        <p style="font-size:12px;color:#9A8F84;line-height:1.7;margin:0;">If you didn't request this code, you can safely ignore this email. Your account remains secure.</p>
-      </div>
-      <div style="padding:24px 40px 30px;background:#FAF7F3;border-top:1px solid #EDE8E0;">
-        <div style="font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:600;color:#1A1814;margin-bottom:10px;">Veri<span style="font-style:italic;color:#C4714A;">nest</span></div>
-        <p style="font-size:11px;line-height:1.7;color:#9A8F84;margin:0;">This is an automated security email from Verinest. If you have concerns about your account security, contact security@verinest.ng.</p>
-      </div>
-    </div>
-  </body>
+<html lang="en" style="margin:0;padding:0;">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body {{ margin: 0; padding: 20px; background-color: #E8E2DA; font-family: 'DM Sans', Arial, sans-serif; }}
+.container {{ max-width: 580px; margin: 0 auto; background: #FFFFFF; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); overflow: hidden; }}
+.header {{ background: #F9F6F1; padding: 24px 32px; border-bottom: 1px solid #EEE8E1; display: flex; justify-content: space-between; align-items: center; }}
+.logo-section {{ display: flex; align-items: center; gap: 12px; }}
+.logo {{ width: 44px; height: 44px; background: #C4714A; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }}
+.logo svg {{ width: 24px; height: 24px; }}
+.brand {{ font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 600; color: #1A1814; letter-spacing: -0.3px; }}
+.brand em {{ font-style: italic; color: #C4714A; }}
+.badge {{ font-size: 8px; letter-spacing: 0.15em; text-transform: uppercase; color: #C4714A; background: #FEF1E8; padding: 6px 12px; border-radius: 20px; font-weight: 500; white-space: nowrap; }}
+.hero {{ background: #1A1A1A; padding: 40px 32px; color: white; }}
+.hero-tag {{ font-size: 8px; letter-spacing: 0.2em; text-transform: uppercase; margin: 0 0 12px; color: rgba(255,255,255,0.75); font-weight: 500; }}
+.hero h1 {{ font-family: 'Cormorant Garamond', serif; font-size: 36px; font-weight: 600; margin: 0 0 12px; line-height: 1.2; }}
+.hero h1 em {{ font-style: italic; }}
+.hero p {{ font-size: 13px; line-height: 1.65; margin: 0; color: rgba(255,255,255,0.78); }}
+.content {{ padding: 32px 32px; }}
+.content p {{ margin: 0 0 14px; font-size: 13px; line-height: 1.75; color: #5A5248; }}
+.content p.intro {{ font-size: 14px; font-weight: 500; color: #1A1814; margin-bottom: 16px; }}
+.code-box {{ background: #F9F6F1; border: 1px solid #EEE8E1; border-radius: 12px; padding: 24px; text-align: center; margin: 20px 0; }}
+.code-label {{ font-size: 8px; letter-spacing: 0.2em; text-transform: uppercase; color: #9A8F84; margin: 0 0 10px; font-weight: 500; }}
+.code-display {{ font-family: 'Courier New', monospace; font-size: 40px; font-weight: 600; color: #C4714A; letter-spacing: 0.1em; margin: 0; }}
+.code-exp {{ font-size: 12px; color: #9A8F84; margin: 10px 0 0; }}
+.warning {{ background: #FFF8F0; border-left: 4px solid #C4714A; padding: 14px 16px; margin: 20px 0; border-radius: 0 4px 4px 0; }}
+.warning p {{ font-size: 12px; color: #7A4020; line-height: 1.6; margin: 0; }}
+.divider {{ height: 1px; background: #EEE8E1; margin: 20px 0; }}
+.footer-section {{ padding: 24px 32px; background: #1A1A1A; border-top: 1px solid #EEE8E1; }}
+.footer-brand {{ font-family: 'Cormorant Garamond', serif; font-size: 18px; font-weight: 600; color: #FFFFFF; margin-bottom: 8px; }}
+.footer-brand em {{ font-style: italic; color: #C4714A; }}
+.footer-text {{ font-size: 11px; line-height: 1.7; color: rgba(255,255,255,0.65); margin: 0; }}
+.copyright {{ font-size: 10px; color: rgba(255,255,255,0.45); margin: 12px 0 0; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); }}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="header">
+<div class="logo-section">
+<div class="logo">
+<svg viewBox="0 0 24 24" fill="none">
+<path d="M3 11L12 3l9 8" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="9" y="13" width="6" height="8" rx="3" fill="white"/>
+</svg>
+</div>
+<div class="brand">Veri<em>nest</em></div>
+</div>
+<div class="badge">Security</div>
+</div>
+<div class="hero">
+<p class="hero-tag">Verification Code</p>
+<h1>Confirm it's<br><em>really you.</em></h1>
+<p>Use the code below to verify your email address and secure your account.</p>
+</div>
+<div class="content">
+<p class="intro">Hi {full_name},</p>
+<p>You requested a verification code for your Verinest account. Enter this code in the app to continue.</p>
+<div class="code-box">
+<p class="code-label">Your verification code</p>
+<p class="code-display">{code}</p>
+<p class="code-exp">Expires in 10 minutes · Do not share this code</p>
+</div>
+<div class="warning">
+<p>⚠ Verinest will never ask for this code by phone or WhatsApp. If someone is asking for it, this is a scam attempt. Do not share it.</p>
+</div>
+<p>If you didn't request this code, you can safely ignore this email. Your account remains secure.</p>
+</div>
+<div class="footer-section">
+<div class="footer-brand">Veri<em>nest</em></div>
+<p class="footer-text">This is an automated security email from Verinest. If you have concerns about your account security, contact security@verinest.ng.</p>
+<p class="copyright">© 2025 Verinest. All rights reserved. Nigeria</p>
+</div>
+</div>
+</body>
 </html>"#
             ),
         }
     }
+
 
     pub fn kyc_status_email(
         &self,
@@ -513,7 +580,29 @@ impl MailService {
             ),
         }
     }
-}
+
+     pub fn agent_match_email(
+        &self,
+        to: String,
+        full_name: &str,
+        property_title: &str,
+        property_price: &str,
+        agent_name: &str,
+        agent_title: &str,
+        action_url: &str,
+    ) -> OutboundEmail {
+        OutboundEmail {
+            to,
+            subject: "A verified agent responded to your need".to_string(),
+            text: format!(
+                "Hi {full_name}, {agent_name} responded to your need for {property_title}. View the listing: {action_url}"
+            ),
+            html: format!(
+                "<!DOCTYPE html>\n<html lang=\"en\" style=\"margin:0;padding:0;\">\n  <body style=\"margin:0;padding:20px;background:#E8E2DA;font-family:'DM Sans',Arial,sans-serif;\">\n    <div style=\"max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.08);\">\n      <div style=\"background:#F9F6F1;padding:24px 32px;border-bottom:1px solid #EEE8E1;display:flex;align-items:center;justify-content:space-between;\">\n        <div style=\"display:flex;align-items:center;gap:12px;\">\n          <div style=\"width:40px;height:40px;background:#C4714A;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;\">\n            <svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\">\n              <path d=\"M3 11L12 3l9 8\" stroke=\"white\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n              <rect x=\"9\" y=\"13\" width=\"6\" height=\"8\" rx=\"3\" fill=\"white\"/>\n            </svg>\n          </div>\n          <div style=\"font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:600;color:#1A1814;letter-spacing:-0.3px;\">Veri<span style=\"font-style:italic;color:#C4714A;\">nest</span></div>\n        </div>\n        <div style=\"font-size:8px;letter-spacing:0.15em;text-transform:uppercase;color:#C4714A;background:#FEF1E8;padding:6px 12px;border-radius:20px;font-weight:500;\">New Match</div>\n      </div>\n      <div style=\"padding:20px 32px;border-bottom:1px solid #EEE8E1;background:#FAFAF8;\">\n        <p style=\"font-size:8px;letter-spacing:0.2em;text-transform:uppercase;margin:0 0 8px;color:#9A8F84;font-weight:500;\">You have a match</p>\n        <h2 style=\"font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:600;line-height:1.2;margin:0;color:#1A1814;\">A verified agent<br>responded to <em>your need.</em></h2>\n      </div>\n      <div style=\"padding:32px;\">\n        <p style=\"font-size:14px;font-weight:500;color:#1A1814;margin:0 0 4px;\">Hi {full_name},</p>\n        <p style=\"font-size:13px;color:#5A5248;line-height:1.75;margin:0 0 20px;\">Good news — a verified agent responded to your need post for a <strong>{property_title}</strong>. Here's what they sent:</p>\n        <div style=\"background:#FAF7F3;border-radius:12px;padding:18px;margin:20px 0;border:1px solid #EEE8E1;\">\n          <div style=\"display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;\">\n            <h3 style=\"font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:600;margin:0;color:#1A1814;flex:1;\">Property Name</h3>\n            <span style=\"background:#C4714A;color:white;font-size:8px;padding:4px 8px;border-radius:4px;text-transform:uppercase;font-weight:600;\">Verified Listing</span>\n          </div>\n          <p style=\"font-size:13px;color:#9A8F84;margin:0 0 10px;\">Location Details</p>\n          <p style=\"font-size:14px;font-weight:600;color:#1A1814;margin:0 0 12px;\">{property_price}</p>\n          <p style=\"font-size:12px;color:#5A5248;margin:0;\">3 bed • 2 bath</p>\n        </div>\n        <div style=\"background:#FAF7F3;border-radius:12px;padding:16px;margin:20px 0;display:flex;gap:12px;border:1px solid #EEE8E1;\">\n          <div style=\"width:40px;height:40px;background:#C4714A;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;\">\n            <span style=\"color:white;font-weight:600;font-size:12px;\">AG</span>\n          </div>\n          <div style=\"flex:1;\">\n            <p style=\"font-size:13px;font-weight:600;color:#1A1814;margin:0 0 2px;\">{agent_name}</p>\n            <p style=\"font-size:12px;color:#9A8F84;margin:0;\">{agent_title}</p>\n            <p style=\"font-size:11px;color:#C4714A;margin:4px 0 0;font-weight:500;\">● VERIFIED PROVIDER</p>\n          </div>\n        </div>\n        <div style=\"margin:24px 0;text-align:center;\">\n          <a href=\"{action_url}\" style=\"display:inline-block;background:#C4714A;color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;padding:12px 28px;border-radius:8px;letter-spacing:0.04em;margin-right:10px;\">View Full Listing →</a>\n          <a href=\"{action_url}\" style=\"display:inline-block;background:transparent;color:#C4714A;text-decoration:none;font-size:13px;font-weight:600;padding:12px 28px;border:1.5px solid #C4714A;border-radius:8px;letter-spacing:0.04em;\">Schedule Viewing</a>\n        </div>\n        <div style=\"height:1px;background:#EEE8E1;margin:20px 0;\"></div>\n        <p style=\"font-size:11px;color:#9A8F84;line-height:1.7;margin:0;\">This agent is verified on Verinest. All communication and viewings should happen through the platform — do not send money or sign anything outside of Verinest.</p>\n      </div>\n      <div style=\"padding:24px 32px 30px;background:#1A1A1A;border-top:1px solid #EEE8E1;\">\n        <div style=\"font-family:'Cormorant Garamond',serif;font-size:16px;font-weight:600;color:#ffffff;margin-bottom:8px;\">Veri<span style=\"font-style:italic;color:#C4714A;\">nest</span></div>\n        <p style=\"font-size:11px;line-height:1.7;color:rgba(255,255,255,0.65);margin:0;\">Matches expire after 48 hours if not reviewed. Log in to your Verinest dashboard to see all your active matches.</p>\n        <div style=\"display:flex;gap:16px;margin-top:12px;\">\n          <a href=\"#\" style=\"font-size:11px;color:#C4714A;text-decoration:none;\">My Dashboard</a>\n          <a href=\"#\" style=\"font-size:11px;color:#C4714A;text-decoration:none;\">My Matches</a>\n          <a href=\"#\" style=\"font-size:11px;color:#C4714A;text-decoration:none;\">Help Centre</a>\n          <a href=\"#\" style=\"font-size:11px;color:#C4714A;text-decoration:none;\">Unsubscribe</a>\n        </div>\n        <p style=\"font-size:10px;color:rgba(255,255,255,0.45);margin:12px 0 0;border-top:1px solid rgba(255,255,255,0.1);padding-top:12px;\">© 2025 Verinest. All rights reserved. Nigeria</p>\n      </div>\n    </div>\n  </body>\n</html>"
+            ),
+        }
+    }
+  }
 
 fn humanize_booking_type(booking_type: &str) -> String {
     booking_type.replace('_', " ")
@@ -601,3 +690,5 @@ fn render_schedule_email_html(
 </html>"#
     )
 }
+
+   
