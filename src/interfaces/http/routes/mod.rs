@@ -182,6 +182,14 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
             "/users/password",
             axum::routing::put(api_v1::update_password),
         )
+        .route(
+            "/users/password/send-otp",
+            post(api_v1::send_password_change_otp),
+        )
+        .route(
+            "/users/password/verify-otp",
+            axum::routing::put(api_v1::update_password_with_otp),
+        )
         .route("/users/{id}", get(users::get_user))
         .route("/users/{id}/reviews", get(trust::list_user_reviews))
         .route("/onboarding/role", post(api_v1::select_onboarding_role))

@@ -31,7 +31,14 @@ pub struct RefreshTokenPayload {
 
 #[derive(Debug, Deserialize)]
 pub struct UpdatePasswordInput {
-    pub old_password: String,
+    pub code: String,
+    pub new_password: String,
+    pub new_password_confirm: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdatePasswordWithOtpInput {
+    pub code: String,
     pub new_password: String,
     pub new_password_confirm: String,
 }
@@ -307,6 +314,8 @@ pub struct OfferView {
     pub property_images: Option<Vec<String>>,
     #[sqlx(default)]
     pub provider_name: Option<String>,
+    #[sqlx(default)]
+    pub provider_phone: Option<String>,
 }
 
 #[derive(Debug, Serialize, FromRow)]
@@ -531,6 +540,26 @@ pub async fn send_email_code(
     Ok(Json(state.auth_use_cases.send_email_code(payload).await?))
 }
 
+pub async fn send_password_change_otp(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<crate::application::services::ValueAck>, AppError> {
+    let code = state
+        .user_repository
+        .create_email_verification_code(user.id, &user.email, "password_change")
+        .await?;
+    let email = state
+        .mail_service
+        .verification_code_email(user.email.clone(), &user.full_name, &code);
+    state.mail_service.send(email).await?;
+
+    Ok(Json(crate::application::services::ValueAck {
+        ok: true,
+        expires_in_seconds: 600,
+        code_length: 5,
+    }))
+}
+
 pub async fn verify_email_code(
     State(state): State<AppState>,
     Json(payload): Json<VerifyEmailCodeInput>,
@@ -650,16 +679,92 @@ pub async fn update_password(
 
     crate::utils::validation::validate_password(&payload.new_password)?;
 
-    let password_service = PasswordService;
-    if !password_service.verify_password(&payload.old_password, &user.password_hash)? {
-        return Err(AppError::unauthorized("invalid password"));
+    let has_valid_code = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS(
+            SELECT 1
+            FROM email_verification_codes
+            WHERE user_id = $1
+              AND email = $2
+              AND purpose = 'password_change'
+              AND code = $3
+              AND used_at IS NULL
+              AND expires_at > NOW()
+        )
+        "#,
+    )
+    .bind(user.id)
+    .bind(user.email.to_lowercase())
+    .bind(payload.code.trim())
+    .fetch_one(&state.pool)
+    .await?;
+
+    if !has_valid_code {
+        return Err(AppError::bad_request("invalid or expired verification code"));
     }
 
-    let hash = password_service.hash_password(&payload.new_password)?;
+    let hash = PasswordService.hash_password(&payload.new_password)?;
     sqlx::query("UPDATE users SET password_hash = $2, updated_at = NOW() WHERE id = $1")
         .bind(user.id)
         .bind(hash)
         .execute(&state.pool)
+        .await?;
+
+    state
+        .user_repository
+        .mark_email_verification_code_used(&user.email, payload.code.trim())
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn update_password_with_otp(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Json(payload): Json<UpdatePasswordWithOtpInput>,
+) -> Result<StatusCode, AppError> {
+    if payload.new_password != payload.new_password_confirm {
+        return Err(AppError::bad_request(
+            "password confirmation does not match",
+        ));
+    }
+
+    crate::utils::validation::validate_password(&payload.new_password)?;
+
+    let has_valid_code = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS(
+            SELECT 1
+            FROM email_verification_codes
+            WHERE user_id = $1
+              AND email = $2
+              AND purpose = 'password_change'
+              AND code = $3
+              AND used_at IS NULL
+              AND expires_at > NOW()
+        )
+        "#,
+    )
+    .bind(user.id)
+    .bind(user.email.to_lowercase())
+    .bind(payload.code.trim())
+    .fetch_one(&state.pool)
+    .await?;
+
+    if !has_valid_code {
+        return Err(AppError::bad_request("invalid or expired verification code"));
+    }
+
+    let hash = PasswordService.hash_password(&payload.new_password)?;
+    sqlx::query("UPDATE users SET password_hash = $2, updated_at = NOW() WHERE id = $1")
+        .bind(user.id)
+        .bind(hash)
+        .execute(&state.pool)
+        .await?;
+
+    state
+        .user_repository
+        .mark_email_verification_code_used(&user.email, payload.code.trim())
         .await?;
 
     Ok(StatusCode::NO_CONTENT)
@@ -683,7 +788,6 @@ pub async fn upsert_onboarding_profile(
         SET full_name = EXCLUDED.full_name,
             phone = EXCLUDED.phone,
             city = EXCLUDED.city,
-            avatar_url = EXCLUDED.avatar_url,
             bio = EXCLUDED.bio,
             onboarding_completed = TRUE,
             updated_at = NOW()
@@ -1298,7 +1402,8 @@ pub async fn list_seeker_offers(
             property.title AS property_title,
             property.location AS property_location,
             property.images AS property_images,
-            provider.full_name AS provider_name
+            provider.full_name AS provider_name,
+            provider.phone AS provider_phone
         FROM offers o
         INNER JOIN posts p ON p.id = o.need_post_id
         INNER JOIN properties property ON property.id = o.property_id
@@ -1512,12 +1617,13 @@ pub async fn create_review(
 
     let review = sqlx::query_scalar::<_, Value>(
         r#"
-        SELECT to_jsonb(x)
-        FROM (
+        WITH inserted AS (
             INSERT INTO reviews (id, reviewer_id, reviewee_id, property_id, response_id, rating, comment)
             VALUES ($1, $2, $3, $4, NULL, $5, $6)
             RETURNING id, reviewer_id, reviewee_id, property_id, response_id, rating, comment, created_at
-        ) x
+        )
+        SELECT to_jsonb(inserted)
+        FROM inserted
         "#,
     )
     .bind(Uuid::new_v4())
@@ -2360,7 +2466,9 @@ pub async fn seeker_dashboard_overview(
     }
 
     let need_count =
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM posts WHERE author_id = $1")
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM posts WHERE author_id = $1 AND status = 'active'",
+        )
             .bind(user.id)
             .fetch_one(&state.pool)
             .await?;
@@ -3057,9 +3165,20 @@ pub async fn notification_delete(
 async fn fetch_profile(pool: &PgPool, user_id: Uuid) -> Result<Option<ProfileView>, AppError> {
     let profile = sqlx::query_as::<_, ProfileView>(
         r#"
-        SELECT id, user_id, full_name, phone, city, avatar_url, bio, onboarding_completed, created_at, updated_at
-        FROM profiles
-        WHERE user_id = $1
+        SELECT
+            p.id,
+            p.user_id,
+            p.full_name,
+            p.phone,
+            p.city,
+            u.wallet_address AS avatar_url,
+            p.bio,
+            p.onboarding_completed,
+            p.created_at,
+            p.updated_at
+        FROM profiles p
+        INNER JOIN users u ON u.id = p.user_id
+        WHERE p.user_id = $1
         "#,
     )
     .bind(user_id)
