@@ -196,47 +196,48 @@ impl MailService {
             ),
             html: format!(
                 r#"<!DOCTYPE html>
-<html lang="en" style="margin:0;padding:0;">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>
-body {{ margin: 0; padding: 20px; background-color: #E8E2DA; font-family: 'DM Sans', Arial, sans-serif; }}
-.container {{ max-width: 580px; margin: 0 auto; background: #FFFFFF; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); overflow: hidden; }}
-.header {{ background: #F9F6F1; padding: 24px 32px; border-bottom: 1px solid #EEE8E1; display: flex; justify-content: space-between; align-items: center; }}
+<style type="text/css">
+* {{ margin: 0; padding: 0; }}
+body {{ margin: 0; padding: 20px 0; background-color: #E8E2DA; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }}
+table {{ border-collapse: collapse; width: 100%; }}
+.container {{ max-width: 580px; margin: 0 auto; background: #FFFFFF; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }}
+.header {{ background: #FAF7F3; padding: 24px 32px; border-bottom: 1px solid #EDE8E0; }}
+.header-inner {{ display: flex; justify-content: space-between; align-items: center; }}
 .logo-section {{ display: flex; align-items: center; gap: 12px; }}
 .logo {{ width: 44px; height: 44px; background: #C4714A; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }}
-.logo svg {{ width: 24px; height: 24px; }}
-.brand {{ font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 600; color: #1A1814; letter-spacing: -0.3px; }}
+.brand {{ font-family: Georgia, 'Times New Roman', serif; font-size: 24px; font-weight: bold; color: #1A1814; }}
 .brand em {{ font-style: italic; color: #C4714A; }}
-.badge {{ font-size: 8px; letter-spacing: 0.15em; text-transform: uppercase; color: #C4714A; background: #FEF1E8; padding: 6px 12px; border-radius: 20px; font-weight: 500; white-space: nowrap; }}
-.hero {{ background: #C4714A; padding: 40px 32px; color: white; }}
-.hero-tag {{ font-size: 8px; letter-spacing: 0.2em; text-transform: uppercase; margin: 0 0 12px; color: rgba(255,255,255,0.75); font-weight: 500; }}
-.hero h1 {{ font-family: 'Cormorant Garamond', serif; font-size: 36px; font-weight: 600; margin: 0 0 12px; line-height: 1.2; }}
+.badge {{ font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: #C4714A; background: #FEF1E8; padding: 6px 12px; border-radius: 20px; font-weight: bold; white-space: nowrap; }}
+.hero {{ background: #C4714A; padding: 40px 32px; color: white; text-align: left; }}
+.hero-tag {{ font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; margin: 0 0 16px; color: rgba(255,255,255,0.8); font-weight: bold; display: block; }}
+.hero h1 {{ font-family: Georgia, 'Times New Roman', serif; font-size: 40px; font-weight: bold; margin: 0 0 16px; line-height: 1.2; }}
 .hero h1 em {{ font-style: italic; }}
-.hero p {{ font-size: 13px; line-height: 1.65; margin: 0; color: rgba(255,255,255,0.78); }}
-.content {{ padding: 32px 32px; }}
-.content p {{ margin: 0 0 14px; font-size: 13px; line-height: 1.75; color: #5A5248; }}
-.content p.intro {{ font-size: 14px; font-weight: 500; color: #1A1814; margin-bottom: 16px; }}
-.cta-button {{ display: inline-block; background: #C4714A; color: #FFFFFF; text-decoration: none; font-size: 12px; font-weight: 600; padding: 13px 24px; border-radius: 8px; letter-spacing: 0.04em; margin: 24px 0; }}
-.divider {{ height: 1px; background: #EEE8E1; margin: 20px 0; }}
-.footer-section {{ padding: 24px 32px; background: #1A1A1A; border-top: 1px solid #EEE8E1; }}
-.footer-brand {{ font-family: 'Cormorant Garamond', serif; font-size: 18px; font-weight: 600; color: #FFFFFF; margin-bottom: 8px; }}
+.hero p {{ font-size: 14px; line-height: 1.6; margin: 0; color: rgba(255,255,255,0.85); }}
+.content {{ padding: 36px 32px; font-size: 13px; line-height: 1.75; color: #5A5248; }}
+.content p {{ margin: 0 0 16px; }}
+.content p.greeting {{ font-size: 14px; font-weight: bold; color: #1A1814; margin-bottom: 12px; }}
+.cta-button {{ display: inline-block; background: #C4714A; color: #FFFFFF; text-decoration: none; font-size: 13px; font-weight: bold; padding: 14px 28px; border-radius: 8px; margin: 24px 0; }}
+.cta-button:hover {{ background: #B85C38; }}
+.divider {{ height: 1px; background: #EDE8E0; margin: 24px 0; }}
+.footer-section {{ padding: 24px 32px; background: #161412; border-top: 1px solid #2A2520; }}
+.footer-brand {{ font-family: Georgia, 'Times New Roman', serif; font-size: 20px; font-weight: bold; color: #FFFFFF; margin-bottom: 8px; }}
 .footer-brand em {{ font-style: italic; color: #C4714A; }}
-.footer-text {{ font-size: 11px; line-height: 1.7; color: rgba(255,255,255,0.65); margin: 0; }}
-.footer-links {{ display: flex; gap: 16px; margin-top: 12px; }}
-.footer-links a {{ font-size: 11px; color: #C4714A; text-decoration: none; }}
-.copyright {{ font-size: 10px; color: rgba(255,255,255,0.45); margin: 12px 0 0; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); }}
+.footer-text {{ font-size: 12px; line-height: 1.7; color: rgba(255,255,255,0.7); margin: 0 0 12px; }}
+.copyright {{ font-size: 11px; color: rgba(255,255,255,0.5); margin: 12px 0 0; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); }}
 </style>
 </head>
 <body>
 <div class="container">
 <div class="header">
-<div class="logo-section">
-<div class="logo">
-<svg viewBox="0 0 24 24" fill="none">
-<path d="M3 11L12 3l9 8" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-<rect x="9" y="13" width="6" height="8" rx="3" fill="white"/>
+<div class="logo-section" style="display:flex;align-items:center;gap:12px;">
+<div class="logo" style="width:44px;height:44px;background:#C4714A;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M3 11L12 3L21 11" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="9" y="13" width="6" height="8" rx="1" fill="white"/>
 </svg>
 </div>
 <div class="brand">Veri<em>nest</em></div>
@@ -244,21 +245,22 @@ body {{ margin: 0; padding: 20px; background-color: #E8E2DA; font-family: 'DM Sa
 <div class="badge">Welcome</div>
 </div>
 <div class="hero">
-<p class="hero-tag">You're in</p>
-<h1>Welcome to<br>Veri<em>nest.</em></h1>
-<p>Nigeria's verified rental marketplace, where serious seekers meet verified providers.</p>
+<div style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;margin:0 0 16px;color:rgba(255,255,255,0.8);font-weight:bold;">You're in</div>
+<h1 style="font-family:Georgia,'Times New Roman',serif;font-size:40px;font-weight:bold;margin:0 0 16px;line-height:1.2;">Welcome to<br>Veri<em>nest.</em></h1>
+<p style="font-size:14px;line-height:1.6;margin:0;color:rgba(255,255,255,0.85);">Nigeria's verified rental marketplace, where serious seekers meet verified providers.</p>
 </div>
 <div class="content">
-<p class="intro">Hi {full_name},</p>
+<p class="greeting">Hi {full_name},</p>
 <p>You've just joined a platform built to make renting in Nigeria less risky, less stressful, and much faster.</p>
 <p>Post what you need, receive responses from verified providers, and manage everything from one place.</p>
-<a href="{action_url}" class="cta-button">Open My Dashboard →</a>
-<div class="divider"></div>
+<div style="margin:24px 0;"><a href="{action_url}" style="display:inline-block;background:#C4714A;color:#FFFFFF;text-decoration:none;font-size:13px;font-weight:bold;padding:14px 28px;border-radius:8px;">Open My Dashboard →</a></div>
+<div style="height:1px;background:#EDE8E0;margin:24px 0;"></div>
 <p>If you have any questions getting started, reply to this email directly. A real person will respond.</p>
 </div>
 <div class="footer-section">
 <div class="footer-brand">Veri<em>nest</em></div>
 <p class="footer-text">Verinest helps seekers, agents, and landlords connect through verified listings, clearer pricing, and faster rental matching across Nigeria.</p>
+<p class="copyright">© 2025 Verinest. All rights reserved. Nigeria</p>
 </div>
 </div>
 </body>
@@ -279,50 +281,50 @@ body {{ margin: 0; padding: 20px; background-color: #E8E2DA; font-family: 'DM Sa
             text: format!("Hello {full_name}, your VeriNest verification code is {code}."),
             html: format!(
                 r#"<!DOCTYPE html>
-<html lang="en" style="margin:0;padding:0;">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>
-body {{ margin: 0; padding: 20px; background-color: #E8E2DA; font-family: 'DM Sans', Arial, sans-serif; }}
-.container {{ max-width: 580px; margin: 0 auto; background: #FFFFFF; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); overflow: hidden; }}
-.header {{ background: #F9F6F1; padding: 24px 32px; border-bottom: 1px solid #EEE8E1; display: flex; justify-content: space-between; align-items: center; }}
+<style type="text/css">
+* {{ margin: 0; padding: 0; }}
+body {{ margin: 0; padding: 20px 0; background-color: #E8E2DA; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }}
+.container {{ max-width: 580px; margin: 0 auto; background: #FFFFFF; border-radius: 16px; overflow: hidden; }}
+.header {{ background: #FAF7F3; padding: 24px 32px; border-bottom: 1px solid #EDE8E0; }}
 .logo-section {{ display: flex; align-items: center; gap: 12px; }}
 .logo {{ width: 44px; height: 44px; background: #C4714A; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }}
-.logo svg {{ width: 24px; height: 24px; }}
-.brand {{ font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 600; color: #1A1814; letter-spacing: -0.3px; }}
+.brand {{ font-family: Georgia, 'Times New Roman', serif; font-size: 24px; font-weight: bold; color: #1A1814; }}
 .brand em {{ font-style: italic; color: #C4714A; }}
-.badge {{ font-size: 8px; letter-spacing: 0.15em; text-transform: uppercase; color: #C4714A; background: #FEF1E8; padding: 6px 12px; border-radius: 20px; font-weight: 500; white-space: nowrap; }}
-.hero {{ background: #1A1A1A; padding: 40px 32px; color: white; }}
-.hero-tag {{ font-size: 8px; letter-spacing: 0.2em; text-transform: uppercase; margin: 0 0 12px; color: rgba(255,255,255,0.75); font-weight: 500; }}
-.hero h1 {{ font-family: 'Cormorant Garamond', serif; font-size: 36px; font-weight: 600; margin: 0 0 12px; line-height: 1.2; }}
+.badge {{ font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: #C4714A; background: #FEF1E8; padding: 6px 12px; border-radius: 20px; font-weight: bold; white-space: nowrap; }}
+.hero {{ background: #161412; padding: 40px 32px; color: white; }}
+.hero-tag {{ font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; margin: 0 0 16px; color: rgba(255,255,255,0.8); font-weight: bold; display: block; }}
+.hero h1 {{ font-family: Georgia, 'Times New Roman', serif; font-size: 40px; font-weight: bold; margin: 0 0 16px; line-height: 1.2; }}
 .hero h1 em {{ font-style: italic; }}
-.hero p {{ font-size: 13px; line-height: 1.65; margin: 0; color: rgba(255,255,255,0.78); }}
-.content {{ padding: 32px 32px; }}
-.content p {{ margin: 0 0 14px; font-size: 13px; line-height: 1.75; color: #5A5248; }}
-.content p.intro {{ font-size: 14px; font-weight: 500; color: #1A1814; margin-bottom: 16px; }}
-.code-box {{ background: #F9F6F1; border: 1px solid #EEE8E1; border-radius: 12px; padding: 24px; text-align: center; margin: 20px 0; }}
-.code-label {{ font-size: 8px; letter-spacing: 0.2em; text-transform: uppercase; color: #9A8F84; margin: 0 0 10px; font-weight: 500; }}
-.code-display {{ font-family: 'Courier New', monospace; font-size: 40px; font-weight: 600; color: #C4714A; letter-spacing: 0.1em; margin: 0; }}
-.code-exp {{ font-size: 12px; color: #9A8F84; margin: 10px 0 0; }}
-.warning {{ background: #FFF8F0; border-left: 4px solid #C4714A; padding: 14px 16px; margin: 20px 0; border-radius: 0 4px 4px 0; }}
-.warning p {{ font-size: 12px; color: #7A4020; line-height: 1.6; margin: 0; }}
-.divider {{ height: 1px; background: #EEE8E1; margin: 20px 0; }}
-.footer-section {{ padding: 24px 32px; background: #1A1A1A; border-top: 1px solid #EEE8E1; }}
-.footer-brand {{ font-family: 'Cormorant Garamond', serif; font-size: 18px; font-weight: 600; color: #FFFFFF; margin-bottom: 8px; }}
+.hero p {{ font-size: 14px; line-height: 1.6; margin: 0; color: rgba(255,255,255,0.85); }}
+.content {{ padding: 36px 32px; font-size: 13px; line-height: 1.75; color: #5A5248; }}
+.content p {{ margin: 0 0 16px; }}
+.content p.greeting {{ font-size: 14px; font-weight: bold; color: #1A1814; margin-bottom: 12px; }}
+.code-box {{ background: #FAF7F3; border: 2px solid #EDE8E0; border-radius: 12px; padding: 32px 24px; text-align: center; margin: 28px 0; }}
+.code-label {{ font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: #9A8F84; margin: 0 0 12px; font-weight: bold; display: block; }}
+.code-display {{ font-family: 'Courier New', monospace; font-size: 48px; font-weight: bold; color: #C4714A; letter-spacing: 0.12em; margin: 0; }}
+.code-exp {{ font-size: 12px; color: #9A8F84; margin: 12px 0 0; }}
+.warning {{ background: #FFF8F0; border-left: 4px solid #C4714A; padding: 16px 18px; margin: 20px 0; border-radius: 0 8px 8px 0; }}
+.warning p {{ font-size: 13px; color: #7A4020; line-height: 1.6; margin: 0; }}
+.divider {{ height: 1px; background: #EDE8E0; margin: 24px 0; }}
+.footer-section {{ padding: 24px 32px; background: #161412; border-top: 1px solid #2A2520; }}
+.footer-brand {{ font-family: Georgia, 'Times New Roman', serif; font-size: 20px; font-weight: bold; color: #FFFFFF; margin-bottom: 8px; }}
 .footer-brand em {{ font-style: italic; color: #C4714A; }}
-.footer-text {{ font-size: 11px; line-height: 1.7; color: rgba(255,255,255,0.65); margin: 0; }}
-.copyright {{ font-size: 10px; color: rgba(255,255,255,0.45); margin: 12px 0 0; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); }}
+.footer-text {{ font-size: 12px; line-height: 1.7; color: rgba(255,255,255,0.7); margin: 0; }}
+.copyright {{ font-size: 11px; color: rgba(255,255,255,0.5); margin: 12px 0 0; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); }}
 </style>
 </head>
 <body>
 <div class="container">
-<div class="header">
-<div class="logo-section">
-<div class="logo">
-<svg viewBox="0 0 24 24" fill="none">
-<path d="M3 11L12 3l9 8" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-<rect x="9" y="13" width="6" height="8" rx="3" fill="white"/>
+<div class="header" style="display:flex;justify-content:space-between;align-items:center;">
+<div class="logo-section" style="display:flex;align-items:center;gap:12px;">
+<div class="logo" style="width:44px;height:44px;background:#C4714A;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M3 11L12 3L21 11" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="9" y="13" width="6" height="8" rx="1" fill="white"/>
 </svg>
 </div>
 <div class="brand">Veri<em>nest</em></div>
@@ -330,16 +332,16 @@ body {{ margin: 0; padding: 20px; background-color: #E8E2DA; font-family: 'DM Sa
 <div class="badge">Security</div>
 </div>
 <div class="hero">
-<p class="hero-tag">Verification Code</p>
-<h1>Confirm it's<br><em>really you.</em></h1>
-<p>Use the code below to verify your email address and secure your account.</p>
+<div style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;margin:0 0 16px;color:rgba(255,255,255,0.8);font-weight:bold;">Verification Code</div>
+<h1 style="font-family:Georgia,'Times New Roman',serif;font-size:40px;font-weight:bold;margin:0 0 16px;line-height:1.2;">Confirm it's<br><em>really you.</em></h1>
+<p style="font-size:14px;line-height:1.6;margin:0;color:rgba(255,255,255,0.85);">Use the code below to verify your email address and secure your account.</p>
 </div>
 <div class="content">
-<p class="intro">Hi {full_name},</p>
+<p class="greeting">Hi {full_name},</p>
 <p>You requested a verification code for your Verinest account. Enter this code in the app to continue.</p>
 <div class="code-box">
-<p class="code-label">Your verification code</p>
-<p class="code-display">{code}</p>
+<span class="code-label">Your verification code</span>
+<div class="code-display">{code}</div>
 <p class="code-exp">Expires in 10 minutes · Do not share this code</p>
 </div>
 <div class="warning">
@@ -349,7 +351,7 @@ body {{ margin: 0; padding: 20px; background-color: #E8E2DA; font-family: 'DM Sa
 </div>
 <div class="footer-section">
 <div class="footer-brand">Veri<em>nest</em></div>
-<p class="footer-text">This is an automated security email from Verinest. If you have concerns about your account security, contact security@verinest.ng.</p>
+<p class="footer-text">This is an automated security email from Verinest. If you have concerns about your account security, contact security@verinest.ng</p>
 <p class="copyright">© 2025 Verinest. All rights reserved. Nigeria</p>
 </div>
 </div>

@@ -232,6 +232,14 @@ pub struct ProfileView {
 }
 
 #[derive(Debug, Serialize, FromRow)]
+pub struct ActivityItem {
+    pub action: String,
+    pub resource_type: Option<String>,
+    pub method: String,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct VerificationView {
     pub id: Uuid,
@@ -316,6 +324,8 @@ pub struct OfferView {
     pub provider_name: Option<String>,
     #[sqlx(default)]
     pub provider_phone: Option<String>,
+    #[sqlx(default)]
+    pub provider_image_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, FromRow)]
@@ -600,6 +610,37 @@ pub async fn me(
     }))
 }
 
+pub async fn get_activity(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Query(query): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<Vec<ActivityItem>>, AppError> {
+    let limit = query
+        .get("limit")
+        .and_then(|l| l.parse::<i64>().ok())
+        .unwrap_or(10);
+
+    let activity = sqlx::query_as::<_, ActivityItem>(
+        r#"
+        SELECT 
+            action,
+            resource_type,
+            method,
+            created_at as timestamp
+        FROM audit_logs
+        WHERE user_id = $1
+        ORDER BY created_at DESC
+        LIMIT $2
+        "#,
+    )
+    .bind(user.id)
+    .bind(limit)
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(activity))
+}
+
 pub async fn select_onboarding_role(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
@@ -788,6 +829,7 @@ pub async fn upsert_onboarding_profile(
         SET full_name = EXCLUDED.full_name,
             phone = EXCLUDED.phone,
             city = EXCLUDED.city,
+            avatar_url = EXCLUDED.avatar_url,
             bio = EXCLUDED.bio,
             onboarding_completed = TRUE,
             updated_at = NOW()
@@ -1403,11 +1445,13 @@ pub async fn list_seeker_offers(
             property.location AS property_location,
             property.images AS property_images,
             provider.full_name AS provider_name,
-            provider.phone AS provider_phone
+            provider.phone AS provider_phone,
+            profiles.avatar_url AS provider_image_url
         FROM offers o
         INNER JOIN posts p ON p.id = o.need_post_id
         INNER JOIN properties property ON property.id = o.property_id
         INNER JOIN users provider ON provider.id = o.provider_user_id
+        LEFT JOIN profiles ON profiles.user_id = o.provider_user_id
         WHERE p.author_id = $1
         ORDER BY o.created_at DESC
         "#,

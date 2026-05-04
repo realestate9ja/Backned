@@ -170,6 +170,7 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
             )),
         )
         .route("/auth/me", get(api_v1::me))
+        .route("/auth/activity", get(api_v1::get_activity))
         .route(
             "/auth/refresh",
             post(api_v1::refresh).route_layer(middleware::from_fn_with_state(
