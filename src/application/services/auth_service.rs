@@ -65,7 +65,7 @@ impl AuthService {
         let welcome_url = format!("{}/onboarding", self.app_base_url.trim_end_matches('/'));
         let welcome_email =
             self.mail_service
-                .welcome_email(user.email.clone(), &user.full_name, &welcome_url);
+                .welcome_email(user.email.clone(), &user.full_name, &welcome_url, "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-welcome.svg");
         self.mail_service.send(welcome_email).await?;
         Ok(response)
     }
@@ -122,6 +122,7 @@ impl AuthService {
                 user.email.clone(),
                 &user.full_name,
                 &verification_link,
+                "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-security-dark.svg",
             );
             self.mail_service.send(email).await?;
         }
@@ -165,7 +166,7 @@ impl AuthService {
             .await?;
         let email =
             self.mail_service
-                .verification_code_email(user.email.clone(), &user.full_name, &code);
+                .verification_code_email(user.email.clone(), &user.full_name, &code, "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-security-dark.svg");
         self.mail_service.send(email).await?;
 
         Ok(ValueAck {

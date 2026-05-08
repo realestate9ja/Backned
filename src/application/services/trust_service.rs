@@ -172,11 +172,17 @@ impl TrustService {
 
     pub async fn moderate_report(
         &self,
+        actor: &User,
         report_id: Uuid,
         input: ModerateReportInput,
     ) -> Result<Report, AppError> {
         if !matches!(input.status.as_str(), "upheld" | "dismissed") {
             return Err(AppError::bad_request("invalid moderation status"));
+        }
+        if let Some(property_action) = input.property_action.as_deref()
+            && !matches!(property_action, "hide" | "suspend")
+        {
+            return Err(AppError::bad_request("invalid property_action"));
         }
         validation::validate_required(&input.review_notes, "review_notes")?;
 
@@ -188,7 +194,7 @@ impl TrustService {
 
         let report = self
             .trust
-            .moderate_report(report_id, input.status.trim(), input.review_notes.trim())
+            .moderate_report(report_id, actor.id, input.status.trim(), input.review_notes.trim())
             .await?
             .ok_or_else(|| AppError::not_found("report not found"))?;
 

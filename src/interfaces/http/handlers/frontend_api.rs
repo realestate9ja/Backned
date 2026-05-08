@@ -196,7 +196,7 @@ async fn send_verification_link(state: &AppState, user: &User) -> Result<(), App
     let link = format!("{}/api/auth/verify?token={}", PUBLIC_APP_BASE_URL, token);
     let email = state
         .mail_service
-        .verification_email(user.email.clone(), &user.full_name, &link);
+        .verification_email(user.email.clone(), &user.full_name, &link, "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-security-dark.svg");
     state.mail_service.send(email).await.map_err(AppError::from)
 }
 
@@ -532,6 +532,7 @@ pub async fn dispatch(
                 user.email.clone(),
                 &user.full_name,
                 &code,
+                "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-security-dark.svg",
             );
             state.mail_service.send(email).await?;
             return Ok(ok(json!({"sent": true, "code_length": 5})));
@@ -564,6 +565,7 @@ pub async fn dispatch(
                 user.email.clone(),
                 &user.full_name,
                 &code,
+                "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-security-dark.svg",
             );
             state.mail_service.send(email).await?;
             return Ok(ok(json!({"sent": true, "code_length": 5})));

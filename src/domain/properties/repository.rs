@@ -522,6 +522,25 @@ impl PropertyRepository {
         Ok(property)
     }
 
+    pub async fn hide_property(&self, property_id: Uuid) -> Result<Option<Property>> {
+        let property = sqlx::query_as::<_, Property>(
+            r#"
+            UPDATE properties
+            SET status = 'hidden',
+                updated_at = NOW()
+            WHERE id = $1
+            RETURNING id, owner_id, agent_id, title, price, location, exact_address, description, images,
+                      contact_name, contact_phone, is_service_apartment, self_managed, status,
+                      verified_by, verified_at, created_at, updated_at
+            "#,
+        )
+        .bind(property_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(property)
+    }
+
     pub async fn record_view(&self, property_id: Uuid, viewer_user_id: Option<Uuid>) -> Result<()> {
         sqlx::query(
             r#"

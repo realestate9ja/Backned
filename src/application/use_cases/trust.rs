@@ -42,9 +42,10 @@ impl TrustUseCases {
 
     pub async fn moderate_report(
         &self,
+        actor: &User,
         report_id: Uuid,
         input: ModerateReportInput,
     ) -> Result<Report, AppError> {
-        self.service.moderate_report(report_id, input).await
+        self.service.moderate_report(actor, report_id, input).await
     }
 }

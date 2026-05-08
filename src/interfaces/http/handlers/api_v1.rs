@@ -64,6 +64,7 @@ pub struct OnboardingProfileInput {
     pub phone: Option<String>,
     pub city: Option<String>,
     pub operating_state: Option<String>,
+    #[serde(alias = "avatar_url")]
     pub avatar_url: Option<String>,
     pub bio: Option<String>,
     pub preferred_city: Option<String>,
@@ -560,7 +561,7 @@ pub async fn send_password_change_otp(
         .await?;
     let email = state
         .mail_service
-        .verification_code_email(user.email.clone(), &user.full_name, &code);
+        .verification_code_email(user.email.clone(), &user.full_name, &code, "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-security-dark.svg");
     state.mail_service.send(email).await?;
 
     Ok(Json(crate::application::services::ValueAck {
@@ -970,6 +971,74 @@ pub async fn upsert_onboarding_profile(
     }))
 }
 
+pub async fn update_user_avatar(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Json(payload): Json<Value>,
+) -> Result<Json<AuthMeResponse>, AppError> {
+    let avatar_url = payload
+        .get("avatarUrl")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    sqlx::query(
+        r#"
+        INSERT INTO profiles (id, user_id, full_name, avatar_url, onboarding_completed)
+        VALUES ($1, $1, $2, $3, FALSE)
+        ON CONFLICT (user_id) DO UPDATE
+        SET avatar_url = EXCLUDED.avatar_url,
+            updated_at = NOW()
+        "#,
+    )
+    .bind(user.id)
+    .bind(&user.full_name)
+    .bind(&avatar_url)
+    .execute(&state.pool)
+    .await?;
+
+    sqlx::query(
+        "UPDATE users SET wallet_address = $2, updated_at = NOW() WHERE id = $1",
+    )
+    .bind(user.id)
+    .bind(&avatar_url)
+    .execute(&state.pool)
+    .await?;
+
+    let profile = fetch_profile(&state.pool, user.id).await?;
+    let refreshed_user = state
+        .user_repository
+        .find_by_id(user.id)
+        .await?
+        .ok_or_else(|| AppError::not_found("user not found"))?;
+    let role_profile = fetch_role_profile(&state.pool, &refreshed_user).await?;
+    let verification = fetch_latest_verification(&state.pool, user.id).await?;
+    let verification_documents = if let Some(item) = &verification {
+        fetch_verification_documents(&state.pool, item.id).await?
+    } else {
+        Vec::new()
+    };
+    let liveness_completed = verification
+        .as_ref()
+        .map(|item| {
+            matches!(
+                item.status.as_str(),
+                "submitted" | "pending" | "in_review" | "approved" | "verified"
+            ) && verification_documents
+                .iter()
+                .any(|doc| doc.document_type == "selfie")
+        })
+        .unwrap_or(false);
+
+    Ok(Json(AuthMeResponse {
+        user: UserPublicView::from(refreshed_user),
+        profile,
+        role_profile,
+        verification,
+        verification_documents,
+        liveness_completed,
+    }))
+}
+
 pub async fn get_agent_notification_settings(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
@@ -1269,10 +1338,10 @@ pub async fn create_offer(
         ));
     }
 
-    let (seeker_user_id, request_title, property_title) =
-        sqlx::query_as::<_, (Uuid, String, String)>(
+    let (seeker_user_id, request_title, property_title, agent_id, property_owner_id) =
+        sqlx::query_as::<_, (Uuid, String, String, Option<Uuid>, Uuid)>(
             r#"
-        SELECT p.author_id, p.request_title, property.title
+        SELECT p.author_id, p.request_title, property.title, property.agent_id, property.owner_id
         FROM posts p
         INNER JOIN properties property ON property.id = $2
         WHERE p.id = $1
@@ -1349,6 +1418,25 @@ pub async fn create_offer(
         }
     }
 
+    // Fetch seeker and agent/landlord details for email
+    let seeker = sqlx::query_as::<_, (String, String)>("SELECT email, full_name FROM users WHERE id = $1")
+        .bind(seeker_user_id)
+        .fetch_optional(&state.pool)
+        .await?;
+
+    let property_contact = if agent_id.is_some() {
+        sqlx::query_as::<_, (String, String)>("SELECT email, full_name FROM users WHERE id = $1")
+            .bind(agent_id.unwrap())
+            .fetch_optional(&state.pool)
+            .await?
+    } else {
+        sqlx::query_as::<_, (String, String)>("SELECT email, full_name FROM users WHERE id = $1")
+            .bind(property_owner_id)
+            .fetch_optional(&state.pool)
+            .await?
+    };
+
+    // Send notification to seeker
     insert_notification(
         &state.pool,
         seeker_user_id,
@@ -1367,6 +1455,57 @@ pub async fn create_offer(
         }),
     )
     .await?;
+
+    // Send email to seeker
+    if let Some((seeker_email, seeker_name)) = seeker {
+        let header_image_url = "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-confirmed.svg";
+        let offer_email = state.mail_service.offer_received_email(
+            seeker_email,
+            &seeker_name,
+            &user.full_name,
+            &property_title,
+            &request_title,
+            "https://app.verinest.ng/seeker/offers",
+            header_image_url,
+        );
+        let _ = state.mail_service.send(offer_email).await;
+    }
+
+    // Send notification to agent/landlord
+    let contact_id = if agent_id.is_some() { agent_id.unwrap() } else { property_owner_id };
+    insert_notification(
+        &state.pool,
+        contact_id,
+        "offer_sent",
+        "Offer sent to seeker",
+        &format!(
+            "Your offer for {} on \"{}\" has been sent.",
+            property_title, request_title
+        ),
+        Some("/agent/leads"),
+        json!({
+            "offerId": offer.id,
+            "propertyId": payload.property_id,
+            "needPostId": payload.need_post_id,
+            "seekerId": seeker_user_id
+        }),
+    )
+    .await?;
+
+    // Send email to agent/landlord
+    if let Some((contact_email, contact_name)) = property_contact {
+        let header_image_url = "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-lead-alert.svg";
+        let offer_email = state.mail_service.offer_received_email(
+            contact_email,
+            &contact_name,
+            &user.full_name,
+            &property_title,
+            &request_title,
+            "https://app.verinest.ng/agent/leads",
+            header_image_url,
+        );
+        let _ = state.mail_service.send(offer_email).await;
+    }
 
     Ok((StatusCode::CREATED, Json(offer)))
 }
@@ -2436,6 +2575,7 @@ pub async fn admin_update_verification(
         &user_record.full_name,
         legacy_status,
         payload.verification_notes.as_deref(),
+        "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-verified.svg",
     );
     state.mail_service.send(email).await?;
 
@@ -2991,6 +3131,32 @@ pub async fn list_admin_users(
     Ok(Json(items))
 }
 
+pub async fn admin_suspend_user(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    axum::extract::Path(user_id): axum::extract::Path<String>,
+) -> Result<Json<Value>, AppError> {
+    ensure_admin(&user)?;
+    sqlx::query("UPDATE users SET is_banned = TRUE WHERE id = $1")
+        .bind(&user_id)
+        .execute(&state.pool)
+        .await?;
+    Ok(Json(serde_json::json!({ "success": true, "message": "User suspended" })))
+}
+
+pub async fn admin_unsuspend_user(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    axum::extract::Path(user_id): axum::extract::Path<String>,
+) -> Result<Json<Value>, AppError> {
+    ensure_admin(&user)?;
+    sqlx::query("UPDATE users SET is_banned = FALSE WHERE id = $1")
+        .bind(&user_id)
+        .execute(&state.pool)
+        .await?;
+    Ok(Json(serde_json::json!({ "success": true, "message": "User unsuspended" })))
+}
+
 pub async fn list_admin_properties(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
@@ -3014,12 +3180,23 @@ pub async fn list_admin_properties(
                 owner.full_name AS owner_name,
                 owner_profile.avatar_url AS owner_avatar_url,
                 agent.full_name AS agent_name,
-                agent_profile.avatar_url AS agent_avatar_url
+                agent_profile.avatar_url AS agent_avatar_url,
+                COALESCE(report_stats.report_count, 0) AS report_count,
+                COALESCE(report_stats.open_report_count, 0) AS open_report_count
             FROM properties p
             INNER JOIN users owner ON owner.id = p.owner_id
             LEFT JOIN profiles owner_profile ON owner_profile.user_id = owner.id
             LEFT JOIN users agent ON agent.id = p.agent_id
             LEFT JOIN profiles agent_profile ON agent_profile.user_id = agent.id
+            LEFT JOIN (
+                SELECT
+                    property_id,
+                    COUNT(*)::bigint AS report_count,
+                    COUNT(*) FILTER (WHERE status = 'open')::bigint AS open_report_count
+                FROM reports
+                WHERE property_id IS NOT NULL
+                GROUP BY property_id
+            ) report_stats ON report_stats.property_id = p.id
             ORDER BY p.created_at DESC
         ) x
         "#,
@@ -3061,7 +3238,28 @@ pub async fn list_admin_reports(
 ) -> Result<Json<Value>, AppError> {
     ensure_admin(&user)?;
     let items = sqlx::query_scalar::<_, Value>(
-        "SELECT COALESCE(jsonb_agg(to_jsonb(r)), '[]'::jsonb) FROM (SELECT * FROM reports ORDER BY created_at DESC) r",
+        r#"
+        SELECT COALESCE(jsonb_agg(to_jsonb(r)), '[]'::jsonb)
+        FROM (
+            SELECT
+                reports.*,
+                property.title AS property_title,
+                property.location AS property_location,
+                property.status::text AS property_status,
+                reporter.full_name AS reporter_name,
+                reporter.email AS reporter_email,
+                reported_user.full_name AS reported_user_name,
+                COALESCE(provider.full_name, owner.full_name) AS property_manager_name,
+                COALESCE(provider.email, owner.email) AS property_manager_email
+            FROM reports
+            LEFT JOIN properties property ON property.id = reports.property_id
+            LEFT JOIN users reporter ON reporter.id = reports.reporter_id
+            LEFT JOIN users reported_user ON reported_user.id = reports.reported_user_id
+            LEFT JOIN users owner ON owner.id = property.owner_id
+            LEFT JOIN users provider ON provider.id = property.agent_id
+            ORDER BY reports.created_at DESC
+        ) r
+        "#,
     )
     .fetch_one(&state.pool)
     .await?;
@@ -3215,13 +3413,13 @@ async fn fetch_profile(pool: &PgPool, user_id: Uuid) -> Result<Option<ProfileVie
             p.full_name,
             p.phone,
             p.city,
-            u.wallet_address AS avatar_url,
+            COALESCE(NULLIF(TRIM(u.wallet_address), ''), p.avatar_url) AS avatar_url,
             p.bio,
             p.onboarding_completed,
             p.created_at,
             p.updated_at
         FROM profiles p
-        INNER JOIN users u ON u.id = p.user_id
+        JOIN users u ON u.id = p.user_id
         WHERE p.user_id = $1
         "#,
     )

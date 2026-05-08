@@ -12,6 +12,7 @@ pub enum PropertyStatus {
     PendingVerification,
     Verified,
     Published,
+    Hidden,
     Suspended,
 }
 

@@ -151,6 +151,7 @@ impl TrustRepository {
     pub async fn moderate_report(
         &self,
         report_id: Uuid,
+        reviewed_by: Uuid,
         status: &str,
         review_notes: &str,
     ) -> Result<Option<Report>> {
@@ -159,6 +160,7 @@ impl TrustRepository {
             UPDATE reports
             SET status = $2,
                 review_notes = $3,
+                reviewed_by = $4,
                 reviewed_at = NOW(),
                 updated_at = NOW()
             WHERE id = $1
@@ -171,6 +173,7 @@ impl TrustRepository {
         .bind(report_id)
         .bind(status)
         .bind(review_notes)
+        .bind(reviewed_by)
         .fetch_optional(&self.pool)
         .await?;
 

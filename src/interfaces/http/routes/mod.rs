@@ -198,6 +198,10 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
             "/onboarding/profile",
             axum::routing::put(api_v1::upsert_onboarding_profile),
         )
+        .route(
+            "/users/avatar",
+            patch(api_v1::update_user_avatar),
+        )
         .route("/verifications", post(api_v1::create_verification))
         .route("/verifications/me", get(api_v1::get_my_verification))
         .route(
@@ -283,6 +287,8 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
             get(api_v1::admin_metrics_overview),
         )
         .route("/admin/users", get(api_v1::list_admin_users))
+        .route("/admin/users/{id}/suspend", post(api_v1::admin_suspend_user))
+        .route("/admin/users/{id}/unsuspend", post(api_v1::admin_unsuspend_user))
         .route("/admin/properties", get(api_v1::list_admin_properties))
         .route("/admin/transactions", get(api_v1::list_admin_transactions))
         .route("/admin/disputes", get(api_v1::list_admin_disputes))

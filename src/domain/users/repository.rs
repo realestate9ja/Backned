@@ -128,6 +128,23 @@ impl UserRepository {
         Ok(user)
     }
 
+    pub async fn find_avatar_url(&self, user_id: Uuid) -> Result<Option<String>> {
+        let avatar_url = sqlx::query_scalar::<_, Option<String>>(
+            r#"
+            SELECT COALESCE(NULLIF(TRIM(u.wallet_address), ''), p.avatar_url) AS avatar_url
+            FROM users u
+            LEFT JOIN profiles p ON p.user_id = u.id
+            WHERE u.id = $1
+            "#,
+        )
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await?
+        .flatten();
+
+        Ok(avatar_url)
+    }
+
     pub async fn update_role(&self, user_id: Uuid, role: UserRole) -> Result<Option<User>> {
         let verification_status = if matches!(role, UserRole::Agent | UserRole::Landlord) {
             "pending"

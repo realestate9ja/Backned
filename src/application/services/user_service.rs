@@ -64,6 +64,7 @@ impl UserService {
             .ok_or_else(|| AppError::not_found("user not found"))?;
         let summary = self.trust.summary_for_user(user.id).await?;
         let mut view = UserPublicView::from(user);
+        view.avatar_url = self.users.find_avatar_url(id).await?;
         view.average_rating = summary.average_rating;
         view.review_count = summary.review_count;
         Ok(view)
@@ -171,11 +172,13 @@ impl UserService {
             &updated.full_name,
             &updated.verification_status,
             updated.verification_notes.as_deref(),
+            "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-verified.svg",
         );
         self.mail_service.send(email).await?;
 
         let summary = self.trust.summary_for_user(updated.id).await?;
         let mut view = UserPublicView::from(updated);
+        view.avatar_url = self.users.find_avatar_url(view.id).await?;
         view.average_rating = summary.average_rating;
         view.review_count = summary.review_count;
         Ok(view)
@@ -184,6 +187,7 @@ impl UserService {
     pub async fn get_dashboard(&self, actor: &User) -> Result<DashboardResponse, AppError> {
         let summary = self.trust.summary_for_user(actor.id).await?;
         let mut profile = UserPublicView::from(actor.clone());
+        profile.avatar_url = self.users.find_avatar_url(actor.id).await?;
         profile.average_rating = summary.average_rating;
         profile.review_count = summary.review_count;
 
