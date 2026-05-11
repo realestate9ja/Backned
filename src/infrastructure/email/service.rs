@@ -374,7 +374,7 @@ body {{ margin: 0; padding: 20px; background: #E8E2DA; font-family: 'DM Sans', -
         } else {
             "Upcoming Visit"
         };
-        let title = if for_provider {
+        let _title = if for_provider {
             "Your schedule starts in\n<em>under one hour.</em>"
         } else {
             "Your viewing starts in\n<em>under one hour.</em>"
@@ -454,7 +454,7 @@ body {{ margin: 0; padding: 20px; background: #E8E2DA; font-family: 'DM Sans', -
         } else {
             "Missed Schedule"
         };
-        let title = if for_provider {
+        let _title = if for_provider {
             "This schedule is now\n<em>past due.</em>"
         } else {
             "This visit is now\n<em>past due.</em>"
