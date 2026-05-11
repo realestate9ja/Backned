@@ -6,6 +6,7 @@ use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::infrastructure::email::MailService;
+use crate::infrastructure::email::service::{header_asset_url, HEADER_POST_VIEWING, HEADER_VIEWING};
 
 #[derive(Clone)]
 pub struct BookingEmailReminderService {
@@ -156,7 +157,7 @@ impl BookingEmailReminderService {
                 booking.scheduled_for,
                 &seeker_url,
                 false,
-                "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-viewing.svg",
+                &header_asset_url(HEADER_VIEWING),
             );
             self.mail_service.send(email).await?;
             sqlx::query("UPDATE bookings SET seeker_upcoming_email_sent_at = NOW() WHERE id = $1")
@@ -177,7 +178,7 @@ impl BookingEmailReminderService {
                 booking.scheduled_for,
                 &provider_url,
                 true,
-                "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-viewing.svg",
+                &header_asset_url(HEADER_VIEWING),
             );
             self.mail_service.send(email).await?;
             sqlx::query(
@@ -208,7 +209,7 @@ impl BookingEmailReminderService {
                 booking.scheduled_for,
                 &seeker_url,
                 false,
-                "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-post-viewing.svg",
+                &header_asset_url(HEADER_POST_VIEWING),
             );
             self.mail_service.send(email).await?;
             sqlx::query("UPDATE bookings SET seeker_past_due_email_sent_at = NOW() WHERE id = $1")
@@ -229,7 +230,7 @@ impl BookingEmailReminderService {
                 booking.scheduled_for,
                 &provider_url,
                 true,
-                "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-post-viewing.svg",
+                &header_asset_url(HEADER_POST_VIEWING),
             );
             self.mail_service.send(email).await?;
             sqlx::query(

@@ -7,6 +7,34 @@ use lettre::{
 };
 use serde::Serialize;
 
+pub const HEADER_BASE_URL: &str = "https://res.cloudinary.com/dui0hakkq/image/upload";
+pub const HEADER_24HR: &str = "header-24hr.svg";
+pub const HEADER_CONFIRMED: &str = "header-confirmed.svg";
+pub const HEADER_DIGEST: &str = "header-digest.svg";
+pub const HEADER_LEAD_ALERT: &str = "header-lead-alert.svg";
+pub const HEADER_LEAD_ALERT_ALT: &str = "header-lead-alert-1.svg";
+pub const HEADER_NEW_MATCH: &str = "header-new-match.svg";
+pub const HEADER_NO_MATCH: &str = "header-no-match.svg";
+pub const HEADER_POST_VIEWING: &str = "header-post-viewing.svg";
+pub const HEADER_REQUEST_LIVE: &str = "header-request-live.svg";
+pub const HEADER_REVIEW: &str = "header-review.svg";
+pub const HEADER_SECURITY_DARK: &str = "header-security-dark.svg";
+pub const HEADER_STILL_LOOKING: &str = "header-still-looking.svg";
+pub const HEADER_VIEWING: &str = "header-viewing.svg";
+pub const HEADER_WELCOME: &str = "header-welcome.svg";
+
+pub fn header_asset_url(file_name: &str) -> String {
+    format!("{HEADER_BASE_URL}/{file_name}")
+}
+
+pub fn kyc_header_asset(status: &str) -> String {
+    match status.trim().to_lowercase().as_str() {
+        "approved" | "verified" => header_asset_url(HEADER_CONFIRMED),
+        "rejected" => header_asset_url(HEADER_REVIEW),
+        _ => header_asset_url(HEADER_REVIEW),
+    }
+}
+
 #[derive(Clone)]
 enum MailProvider {
     Disabled,
@@ -133,6 +161,69 @@ impl MailService {
         }
     }
 
+    // Helper function to build refined email templates with header SVGs
+    fn build_email_template(
+        &self,
+        header_image_url: &str,
+        greeting: &str,
+        body_text: &str,
+        cta_section: Option<&str>,
+        footer_note: Option<&str>,
+    ) -> String {
+        let cta_html = cta_section.unwrap_or("");
+        let footer_text = footer_note.unwrap_or("For more information, visit your Verinest dashboard.");
+
+        format!(
+            "<!DOCTYPE html>\
+<html lang=\"en\">\
+<head>\
+<meta charset=\"UTF-8\">\
+<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\
+<style type=\"text/css\">\
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}\
+body {{ margin: 0; padding: 20px; background: #E8E2DA; font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }}\
+.email-shell {{ max-width: 560px; margin: 0 auto; background: #FFFFFF; border-radius: 14px; overflow: hidden; box-shadow: 0 8px 40px rgba(0,0,0,0.10); }}\
+.email-header-img {{ width: 100%; display: block; max-height: 200px; object-fit: cover; }}\
+.email-body {{ padding: 36px 40px 32px; }}\
+.greeting {{ font-size: 15px; font-weight: 600; color: #1A1814; margin-bottom: 14px; }}\
+.body-text {{ font-size: 13.5px; color: #5A5248; line-height: 1.75; margin-bottom: 20px; }}\
+.email-divider {{ height: 1px; background: #EDE8E0; margin: 28px 0; }}\
+.email-footer {{ background: #161412; padding: 28px 40px; border-top: 1px solid #2A2520; }}\
+.footer-text {{ font-size: 11px; color: #5A5048; line-height: 1.7; margin-bottom: 16px; }}\
+.footer-links {{ display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 16px; }}\
+.footer-links a {{ font-size: 10px; color: #7A6F64; text-decoration: none; letter-spacing: 0.06em; }}\
+.footer-divider {{ height: 1px; background: #2A2520; margin-bottom: 14px; }}\
+.footer-legal {{ font-size: 10px; color: #3A3028; line-height: 1.6; }}\
+</style>\
+</head>\
+<body>\
+<div class=\"email-shell\">\
+<img src=\"{0}\" alt=\"Verinest Email Header\" class=\"email-header-img\" />\
+<div class=\"email-body\">\
+<p class=\"greeting\">{1}</p>\
+<p class=\"body-text\">{2}</p>\
+{3}\
+<div class=\"email-divider\"></div>\
+<p class=\"body-text\" style=\"font-size:12px;color:#9A8F84;margin-bottom:0;\">{4}</p>\
+</div>\
+<div class=\"email-footer\">\
+<p class=\"footer-text\">Verinest helps seekers, agents, and landlords connect through verified listings, clearer pricing, and faster rental matching across Nigeria.</p>\
+<div class=\"footer-links\">\
+<a href=\"https://verinest.ng\">Browse Homes</a>\
+<a href=\"https://verinest.ng/post\">Post a Need</a>\
+<a href=\"https://verinest.ng/agents\">For Agents</a>\
+<a href=\"https://verinest.ng/help\">Help Centre</a>\
+</div>\
+<div class=\"footer-divider\"></div>\
+<p class=\"footer-legal\">© 2025 Verinest. All rights reserved. · Nigeria<br>You are receiving this because you have an account at verinest.ng</p>\
+</div>\
+</div>\
+</body>\
+</html>",
+            header_image_url, greeting, body_text, cta_html, footer_text,
+        )
+    }
+
     pub fn verification_email(
         &self,
         to: String,
@@ -140,127 +231,52 @@ impl MailService {
         verification_link: &str,
         header_image_url: &str,
     ) -> OutboundEmail {
+        let cta_html = format!(
+            r#"<div style="margin:28px 0;"><a href="{link}" style="display:inline-block;background:#C4714A;color:#FFFFFF;text-decoration:none;font-size:13px;font-weight:600;padding:15px 32px;border-radius:12px;width:100%;text-align:center;box-sizing:border-box;">Verify My Email →</a></div>"#,
+            link = verification_link
+        );
+
+        let footer_note = format!("If the button doesn't work, copy and paste this link in your browser: {}", verification_link);
+        
+        let html = self.build_email_template(
+            header_image_url,
+            &format!("Hi {},", full_name),
+            "Your account has been created successfully. To activate it fully, confirm your email address using the secure link below.",
+            Some(&cta_html),
+            Some(&footer_note),
+        );
+
         OutboundEmail {
             to,
             subject: "Verify your Verinest email".to_string(),
             text: format!(
-                "Hello {full_name}, verify your email by opening this link: {verification_link}"
+                "Hello {}, verify your email by opening this link: {}", full_name, verification_link
             ),
-            html: format!(
-                r#"<!DOCTYPE html>
-            <html lang="en">
-            <body style="margin:0;padding:24px;background:#E8E2DA;font-family:'DM Sans',Arial,sans-serif;">
-                <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,0.10);">
-                <div style="background:#FAF7F3;padding:28px 40px 24px;border-bottom:1px solid #EDE8E0;display:flex;align-items:center;justify-content:space-between;">
-                    <div style="display:flex;align-items:center;gap:10px;">
-                    <div style="width:36px;height:36px;background:#C4714A;border-radius:10px;display:flex;align-items:center;justify-content:center;">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                        <path d="M3 11L12 3l9 8" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <rect x="9" y="13" width="6" height="8" rx="3" fill="white"/>
-                        </svg>
-                    </div>
-                    <div style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:600;color:#1A1814;">Veri<span style="font-style:italic;color:#C4714A;">nest</span></div>
-                    </div>
-                    <div style="font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:#C4714A;background:#F0E0D4;padding:5px 10px;border-radius:20px;">Security</div>
-                </div>
-                <img src="{header_image_url}" alt="Email Header" style="width:100%;height:auto;display:block;max-width:560px;" />
-                <div style="padding:36px 40px;">
-                    <p style="font-size:15px;font-weight:500;color:#1A1814;margin:0 0 14px;">Hi {full_name},</p>
-                    <p style="font-size:13.5px;color:#5A5248;line-height:1.75;margin:0 0 16px;">Your account has been created successfully. To activate it fully, confirm your email address using the secure link below.</p>
-                    <div style="margin:28px 0;">
-                    <a href="{verification_link}" style="display:inline-block;background:#C4714A;color:#ffffff;text-decoration:none;font-size:13px;font-weight:500;letter-spacing:0.05em;padding:15px 32px;border-radius:12px;">Verify My Email</a>
-                    </div>
-                    <div style="height:1px;background:#EFE9E2;margin:28px 0;"></div>
-                    <p style="font-size:12px;color:#9A8F84;line-height:1.7;margin:0;">If the button doesn't work, copy and paste this link in your browser:<br><span style="color:#1A1814;word-break:break-all;font-size:11px;">{verification_link}</span></p>
-                </div>
-                <div style="padding:24px 40px 30px;background:#FAF7F3;border-top:1px solid #EDE8E0;">
-                    <div style="font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:600;color:#1A1814;margin-bottom:10px;">Veri<span style="font-style:italic;color:#C4714A;">nest</span></div>
-                    <p style="font-size:11px;line-height:1.7;color:#9A8F84;margin:0;">If you have any questions, reply to this email directly. A real person will respond — not a bot.</p>
-                </div>
-                </div>
-            </body>
-            </html>"#,
-                header_image_url = header_image_url
-            ),
+            html,
         }
     }
 
     pub fn welcome_email(&self, to: String, full_name: &str, action_url: &str, header_image_url: &str) -> OutboundEmail {
+        let cta_html = format!(
+            r#"<div style="margin:28px 0;"><a href="{url}" style="display:inline-block;background:#C4714A;color:#FFFFFF;text-decoration:none;font-size:13px;font-weight:600;padding:15px 32px;border-radius:12px;width:100%;text-align:center;box-sizing:border-box;">Post Your First Need →</a></div>"#,
+            url = action_url
+        );
+        
+        let html = self.build_email_template(
+            header_image_url,
+            &format!("Hi {},", full_name),
+            "You've just joined a platform built to make renting in Nigeria less risky, less stressful, and much faster. Post what you need, receive responses from verified providers, and manage everything from one place.",
+            Some(&cta_html),
+            Some("If you have any questions getting started, reply to this email directly. A real person will respond — not a bot."),
+        );
+
         OutboundEmail {
             to,
-            subject: "Welcome to VeriNest".to_string(),
+            subject: "Welcome to Verinest".to_string(),
             text: format!(
-                "Hi {full_name}, welcome to Verinest. Open your dashboard to get started: {action_url}"
+                "Hi {}, welcome to Verinest. Open your dashboard to get started: {}", full_name, action_url
             ),
-            html: format!(
-                r#"<!DOCTYPE html>
-                <html lang="en">
-                <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <style type="text/css">
-                * {{ margin: 0; padding: 0; }}
-                body {{ margin: 0; padding: 20px 0; background-color: #E8E2DA; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }}
-                table {{ border-collapse: collapse; width: 100%; }}
-                .container {{ max-width: 580px; margin: 0 auto; background: #FFFFFF; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }}
-                .header {{ background: #FAF7F3; padding: 24px 32px; border-bottom: 1px solid #EDE8E0; }}
-                .header-inner {{ display: flex; justify-content: space-between; align-items: center; }}
-                .logo-section {{ display: flex; align-items: center; gap: 12px; }}
-                .logo {{ width: 44px; height: 44px; background: #C4714A; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }}
-                .brand {{ font-family: Georgia, 'Times New Roman', serif; font-size: 24px; font-weight: bold; color: #1A1814; }}
-                .brand em {{ font-style: italic; color: #C4714A; }}
-                .badge {{ font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: #C4714A; background: #FEF1E8; padding: 6px 12px; border-radius: 20px; font-weight: bold; white-space: nowrap; }}
-                .hero {{ background: #C4714A; padding: 40px 32px; color: white; text-align: left; }}
-                .hero-tag {{ font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; margin: 0 0 16px; color: rgba(255,255,255,0.8); font-weight: bold; display: block; }}
-                .hero h1 {{ font-family: Georgia, 'Times New Roman', serif; font-size: 40px; font-weight: bold; margin: 0 0 16px; line-height: 1.2; }}
-                .hero h1 em {{ font-style: italic; }}
-                .hero p {{ font-size: 14px; line-height: 1.6; margin: 0; color: rgba(255,255,255,0.85); }}
-                .content {{ padding: 36px 32px; font-size: 13px; line-height: 1.75; color: #5A5248; }}
-                .content p {{ margin: 0 0 16px; }}
-                .content p.greeting {{ font-size: 14px; font-weight: bold; color: #1A1814; margin-bottom: 12px; }}
-                .cta-button {{ display: inline-block; background: #C4714A; color: #FFFFFF; text-decoration: none; font-size: 13px; font-weight: bold; padding: 14px 28px; border-radius: 8px; margin: 24px 0; }}
-                .cta-button:hover {{ background: #B85C38; }}
-                .divider {{ height: 1px; background: #EDE8E0; margin: 24px 0; }}
-                .footer-section {{ padding: 24px 32px; background: #161412; border-top: 1px solid #2A2520; }}
-                .footer-brand {{ font-family: Georgia, 'Times New Roman', serif; font-size: 20px; font-weight: bold; color: #FFFFFF; margin-bottom: 8px; }}
-                .footer-brand em {{ font-style: italic; color: #C4714A; }}
-                .footer-text {{ font-size: 12px; line-height: 1.7; color: rgba(255,255,255,0.7); margin: 0 0 12px; }}
-                .copyright {{ font-size: 11px; color: rgba(255,255,255,0.5); margin: 12px 0 0; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); }}
-                </style>
-                </head>
-                <body>
-                <div class="container">
-                <div class="header">
-                <div class="logo-section" style="display:flex;align-items:center;gap:12px;">
-                <div class="logo" style="width:44px;height:44px;background:#C4714A;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M3 11L12 3L21 11" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <rect x="9" y="13" width="6" height="8" rx="1" fill="white"/>
-                </svg>
-                </div>
-                <div class="brand">Veri<em>nest</em></div>
-                </div>
-                <div class="badge">Welcome</div>
-                </div>
-                <img src="{header_image_url}" alt="Email Header" style="width:100%;height:auto;display:block;max-width:580px;" />
-                <div class="content">
-                <p class="greeting">Hi {full_name},</p>
-                <p>You've just joined a platform built to make renting in Nigeria less risky, less stressful, and much faster.</p>
-                <p>Post what you need, receive responses from verified providers, and manage everything from one place.</p>
-                <div style="margin:24px 0;"><a href="{action_url}" style="display:inline-block;background:#C4714A;color:#FFFFFF;text-decoration:none;font-size:13px;font-weight:bold;padding:14px 28px;border-radius:8px;">Open My Dashboard →</a></div>
-                <div style="height:1px;background:#EDE8E0;margin:24px 0;"></div>
-                <p>If you have any questions getting started, reply to this email directly. A real person will respond.</p>
-                </div>
-                <div class="footer-section">
-                <div class="footer-brand">Veri<em>nest</em></div>
-                <p class="footer-text">Verinest helps seekers, agents, and landlords connect through verified listings, clearer pricing, and faster rental matching across Nigeria.</p>
-                <p class="copyright">© 2025 Verinest. All rights reserved. Nigeria</p>
-                </div>
-                </div>
-                </body>
-                </html>"#,
-                header_image_url = header_image_url
-            ),
+            html,
         }
     }
 
@@ -271,86 +287,24 @@ impl MailService {
         code: &str,
         header_image_url: &str,
     ) -> OutboundEmail {
+        let cta_html = format!(
+            r#"<div style="background:#FAF7F3;border-radius:16px;padding:32px;text-align:center;margin:28px 0;border:1px dashed #E0D8CE;"><p style="font-size:9px;letter-spacing:0.25em;text-transform:uppercase;color:#9A8F84;margin-bottom:16px;">Your verification code</p><div style="font-family:'Cormorant Garamond',serif;font-size:56px;font-weight:600;color:#C4714A;letter-spacing:0.2em;line-height:1;margin-bottom:12px;word-break:break-all;">{code}</div><p style="font-size:11px;color:#B0A090;">Expires in 10 minutes · Do not share this code</p></div><div style="background:#FFF3ED;border-left:3px solid #C4714A;padding:14px 18px;border-radius:0 10px 10px 0;margin-bottom:20px;"><p style="font-size:12px;color:#7A4020;line-height:1.6;">⚠️ <strong>Verinest will never ask for this code by phone or WhatsApp.</strong> If someone is asking for it, this is a scam attempt. Do not share it.</p></div>"#,
+            code = code
+        );
+
+        let html = self.build_email_template(
+            header_image_url,
+            &format!("Hi {},", full_name),
+            "You requested a verification code for your Verinest account. Enter this code in the app to continue.",
+            Some(&cta_html),
+            Some("If you didn't request this code, you can safely ignore this email. Your account remains secure."),
+        );
+
         OutboundEmail {
             to,
-            subject: "Your VeriNest verification code".to_string(),
-            text: format!("Hello {full_name}, your VeriNest verification code is {code}."),
-            html: format!(
-                r#"<!DOCTYPE html>
-            <html lang="en">
-            <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style type="text/css">
-            * {{ margin: 0; padding: 0; }}
-            body {{ margin: 0; padding: 20px 0; background-color: #E8E2DA; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }}
-            .container {{ max-width: 580px; margin: 0 auto; background: #FFFFFF; border-radius: 16px; overflow: hidden; }}
-            .header {{ background: #FAF7F3; padding: 24px 32px; border-bottom: 1px solid #EDE8E0; }}
-            .logo-section {{ display: flex; align-items: center; gap: 12px; }}
-            .logo {{ width: 44px; height: 44px; background: #C4714A; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }}
-            .brand {{ font-family: Georgia, 'Times New Roman', serif; font-size: 24px; font-weight: bold; color: #1A1814; }}
-            .brand em {{ font-style: italic; color: #C4714A; }}
-            .badge {{ font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: #C4714A; background: #FEF1E8; padding: 6px 12px; border-radius: 20px; font-weight: bold; white-space: nowrap; }}
-            .hero {{ background: #161412; padding: 40px 32px; color: white; }}
-            .hero-tag {{ font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; margin: 0 0 16px; color: rgba(255,255,255,0.8); font-weight: bold; display: block; }}
-            .hero h1 {{ font-family: Georgia, 'Times New Roman', serif; font-size: 40px; font-weight: bold; margin: 0 0 16px; line-height: 1.2; }}
-            .hero h1 em {{ font-style: italic; }}
-            .hero p {{ font-size: 14px; line-height: 1.6; margin: 0; color: rgba(255,255,255,0.85); }}
-            .content {{ padding: 36px 32px; font-size: 13px; line-height: 1.75; color: #5A5248; }}
-            .content p {{ margin: 0 0 16px; }}
-            .content p.greeting {{ font-size: 14px; font-weight: bold; color: #1A1814; margin-bottom: 12px; }}
-            .code-box {{ background: #FAF7F3; border: 2px solid #EDE8E0; border-radius: 12px; padding: 32px 24px; text-align: center; margin: 28px 0; }}
-            .code-label {{ font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: #9A8F84; margin: 0 0 12px; font-weight: bold; display: block; }}
-            .code-display {{ font-family: 'Courier New', monospace; font-size: 48px; font-weight: bold; color: #C4714A; letter-spacing: 0.12em; margin: 0; }}
-            .code-exp {{ font-size: 12px; color: #9A8F84; margin: 12px 0 0; }}
-            .warning {{ background: #FFF8F0; border-left: 4px solid #C4714A; padding: 16px 18px; margin: 20px 0; border-radius: 0 8px 8px 0; }}
-            .warning p {{ font-size: 13px; color: #7A4020; line-height: 1.6; margin: 0; }}
-            .divider {{ height: 1px; background: #EDE8E0; margin: 24px 0; }}
-            .footer-section {{ padding: 24px 32px; background: #161412; border-top: 1px solid #2A2520; }}
-            .footer-brand {{ font-family: Georgia, 'Times New Roman', serif; font-size: 20px; font-weight: bold; color: #FFFFFF; margin-bottom: 8px; }}
-            .footer-brand em {{ font-style: italic; color: #C4714A; }}
-            .footer-text {{ font-size: 12px; line-height: 1.7; color: rgba(255,255,255,0.7); margin: 0; }}
-            .copyright {{ font-size: 11px; color: rgba(255,255,255,0.5); margin: 12px 0 0; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); }}
-            </style>
-            </head>
-            <body>
-            <div class="container">
-            <div class="header" style="display:flex;justify-content:space-between;align-items:center;">
-            <div class="logo-section" style="display:flex;align-items:center;gap:12px;">
-            <div class="logo" style="width:44px;height:44px;background:#C4714A;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M3 11L12 3L21 11" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            <rect x="9" y="13" width="6" height="8" rx="1" fill="white"/>
-            </svg>
-            </div>
-            <div class="brand">Veri<em>nest</em></div>
-            </div>
-            <div class="badge">Security</div>
-            </div>
-            <img src="{header_image_url}" alt="Email Header" style="width:100%;height:auto;display:block;max-width:580px;" />
-            <div class="content">
-            <p class="greeting">Hi {full_name},</p>
-            <p>You requested a verification code for your Verinest account. Enter this code in the app to continue.</p>
-            <div class="code-box">
-            <span class="code-label">Your verification code</span>
-            <div class="code-display">{code}</div>
-            <p class="code-exp">Expires in 10 minutes · Do not share this code</p>
-            </div>
-            <div class="warning">
-            <p>⚠ Verinest will never ask for this code by phone or WhatsApp. If someone is asking for it, this is a scam attempt. Do not share it.</p>
-            </div>
-            <p>If you didn't request this code, you can safely ignore this email. Your account remains secure.</p>
-            </div>
-            <div class="footer-section">
-            <div class="footer-brand">Veri<em>nest</em></div>
-            <p class="footer-text">This is an automated security email from Verinest. If you have concerns about your account security, contact security@verinest.ng</p>
-            <p class="copyright">© 2025 Verinest. All rights reserved. Nigeria</p>
-            </div>
-            </div>
-            </body>
-            </html>"#,
-                header_image_url = header_image_url
-            ),
+            subject: "Your Verinest verification code".to_string(),
+            text: format!("Hello {}, your Verinest verification code is {}. Do not share this code. Expires in 10 minutes.", full_name, code),
+            html,
         }
     }
 
@@ -363,70 +317,42 @@ impl MailService {
         notes: Option<&str>,
         header_image_url: &str,
     ) -> OutboundEmail {
-        let notes = notes.unwrap_or("No additional notes were provided.");
-        let subject = match verification_status {
-            "verified" => "Your VeriNest KYC has been approved",
-            "rejected" => "Your VeriNest KYC needs attention",
-            _ => "Your VeriNest KYC status was updated",
-        };
+        let notes_text = notes.unwrap_or("Your verification process has been completed.");
         let normalized_status = verification_status.to_lowercase();
-        if normalized_status == "verified" || normalized_status == "approved" {
-            return OutboundEmail {
-                to,
-                subject: "Your VeriNest KYC has been approved".to_string(),
-                text: format!(
-                    "Hello {full_name}, your Verinest verification has been approved. Notes: {notes}"
-                ),
-                html: format!(
-                    r#"<!DOCTYPE html>
-                <html lang="en">
-                <body style="margin:0;padding:24px;background:#E8E2DA;font-family:'DM Sans',Arial,sans-serif;">
-                    <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,0.10);">
-                    <div style="background:#FAF7F3;padding:28px 40px 24px;border-bottom:1px solid #EDE8E0;display:flex;align-items:center;justify-content:space-between;">
-                        <div style="display:flex;align-items:center;gap:10px;">
-                        <div style="width:36px;height:36px;background:#C4714A;border-radius:10px;display:flex;align-items:center;justify-content:center;">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                            <path d="M3 11L12 3l9 8" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-                            <rect x="9" y="13" width="6" height="8" rx="3" fill="white"/>
-                            </svg>
-                        </div>
-                        <div style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:600;color:#1A1814;">Veri<span style="font-style:italic;color:#C4714A;">nest</span></div>
-                        </div>
-                        <div style="font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:#3A8A52;background:#EBF7EF;padding:5px 10px;border-radius:20px;">Approved ✓</div>
-                    </div>
-                    <img src="{header_image_url}" alt="Email Header" style="width:100%;height:auto;display:block;max-width:560px;" />
-                    <div style="padding:36px 40px;">
-                        <p style="font-size:15px;font-weight:500;color:#1A1814;margin:0 0 14px;">Hi {full_name},</p>
-                        <p style="font-size:13.5px;color:#5A5248;line-height:1.75;margin:0 0 14px;">Congratulations — your Verinest verification has been reviewed and approved.</p>
-                        <div style="background:#FAF7F3;border-left:4px solid #3A8A52;padding:16px 18px;border-radius:0 10px 10px 0;margin:18px 0;">
-                        <div style="font-size:13px;font-weight:600;color:#3A8A52;margin-bottom:6px;">Your verified badge is active</div>
-                        <div style="font-size:13px;color:#5A5248;line-height:1.7;">Your profile now carries the trust signal other users see when deciding who to work with on Verinest.</div>
-                        </div>
-                        <p style="font-size:12px;color:#9A8F84;line-height:1.7;margin:0;">{notes}</p>
-                    </div>
-                    <div style="padding:24px 40px 30px;background:#FAF7F3;border-top:1px solid #EDE8E0;">
-                        <div style="font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:600;color:#1A1814;margin-bottom:10px;">Veri<span style="font-style:italic;color:#C4714A;">nest</span></div>
-                        <p style="font-size:11px;line-height:1.7;color:#9A8F84;margin:0;">Questions about your profile or next steps? Reply to this email and our team will help.</p>
-                    </div>
-                    </div>
-                </body>
-                </html>"#,
-                    header_image_url = header_image_url
-                ),
-            };
-        }
+        let is_approved = normalized_status == "verified" || normalized_status == "approved";
+        
+        let info_card = if is_approved {
+            format!(r#"<div style="background:#EBF7EF;border-left:4px solid #3A8A52;padding:16px 18px;border-radius:0 10px 10px 0;margin:18px 0;"><div style="font-size:13px;font-weight:600;color:#3A8A52;margin-bottom:6px;">Your verified badge is active</div><div style="font-size:13px;color:#5A5248;line-height:1.7;">Your profile now carries the trust signal that helps others decide who to work with on Verinest.</div></div>"#)
+        } else {
+            format!(r#"<div style="background:#FFF3ED;border-left:4px solid #C4714A;padding:16px 18px;border-radius:0 10px 10px 0;margin:18px 0;"><div style="font-size:13px;font-weight:600;color:#C4714A;margin-bottom:6px;">Attention Required</div><div style="font-size:13px;color:#7A4020;line-height:1.7;">{}</div></div>"#, notes_text)
+        };
+        
+        let status_message = if is_approved {
+            "Congratulations — your Verinest verification has been reviewed and approved."
+        } else {
+            "Your Verinest verification status update requires your attention. Please review the details below."
+        };
+
+        let html = self.build_email_template(
+            header_image_url,
+            &format!("Hi {},", full_name),
+            status_message,
+            Some(&info_card),
+            Some(&notes_text),
+        );
+
         OutboundEmail {
             to,
-            subject: subject.to_string(),
+            subject: if is_approved {
+                "Your Verinest verification is approved".to_string()
+            } else {
+                "Your Verinest verification needs attention".to_string()
+            },
             text: format!(
-                "Hello {full_name}, your KYC status is now {verification_status}. Notes: {notes}"
+                "Hello {}, your Verinest verification status has been updated to: {}. {}", 
+                full_name, verification_status, notes_text
             ),
-            html: format!(
-                r#"<p>Hello {full_name},</p><p>Your KYC status is now <strong>{verification_status}</strong>.</p><p>{notes}</p><p>Please log into your Verinest dashboard to view details and next steps.</p>"#,
-                full_name = full_name,
-                verification_status = verification_status,
-                notes = notes
-            ),
+            html,
         }
     }
 
@@ -482,6 +408,10 @@ impl MailService {
             )
         };
         let schedule_label = format_schedule(scheduled_for);
+        let badge = role_label;
+        let intro = body_intro.clone();
+        let footer_note = "Please be ready a few minutes early and keep communication inside Verinest for your safety.";
+        let overdue = false;
 
         OutboundEmail {
             to,
@@ -490,18 +420,17 @@ impl MailService {
                 "Hi {recipient_name}, {body_intro} Time: {schedule_label}. Location: {property_location}. Open: {action_url}"
             ),
             html: render_schedule_email_html(
-                role_label,
-                title,
+                badge,
                 recipient_name,
-                &body_intro,
+                &intro,
                 property_title,
                 property_location,
-                &humanize_booking_type(booking_type),
+                booking_type,
                 &schedule_label,
                 action_copy,
                 action_url,
-                "Please be ready a few minutes early and keep communication inside Verinest for your safety.",
-                false,
+                footer_note,
+                overdue,
                 header_image_url,
             ),
         }
@@ -556,6 +485,10 @@ impl MailService {
             format!("Missed Verinest schedule — {}", property_title)
         };
         let schedule_label = format_schedule(scheduled_for);
+        let badge = role_label;
+        let intro = body_intro.clone();
+        let footer_note = "If the meeting happened, update your status in Verinest. If it did not, reschedule inside the platform so both sides stay aligned.";
+        let overdue = true;
 
         OutboundEmail {
             to,
@@ -564,18 +497,17 @@ impl MailService {
                 "Hi {recipient_name}, {body_intro} Original time: {schedule_label}. Location: {property_location}. Open: {action_url}"
             ),
             html: render_schedule_email_html(
-                role_label,
-                title,
+                badge,
                 recipient_name,
-                &body_intro,
+                &intro,
                 property_title,
                 property_location,
-                &humanize_booking_type(booking_type),
+                booking_type,
                 &schedule_label,
                 action_copy,
                 action_url,
-                "If the meeting happened, update the status in Verinest. If it did not, reschedule inside the platform so both sides stay aligned.",
-                true,
+                footer_note,
+                overdue,
                 header_image_url,
             ),
         }
@@ -772,7 +704,6 @@ fn humanize_booking_type(booking_type: &str) -> String {
 
     fn render_schedule_email_html(
         badge: &str,
-        title: &str,
         recipient_name: &str,
         intro: &str,
         property_title: &str,
@@ -785,8 +716,7 @@ fn humanize_booking_type(booking_type: &str) -> String {
         overdue: bool,
         header_image_url: &str,
     ) -> String {
-        let hero_class = if overdue { "#161412" } else { "#C4714A" };
-        let badge_bg = if overdue { "#FFF1EB" } else { "#F0E0D4" };
+                let badge_bg = if overdue { "#FFF1EB" } else { "#F0E0D4" };
         let badge_fg = if overdue { "#B85C38" } else { "#C4714A" };
         let card_bg = if overdue { "#FFF8F4" } else { "#FAF7F3" };
 
@@ -832,7 +762,7 @@ fn humanize_booking_type(booking_type: &str) -> String {
 
         <div style="padding:24px 40px 30px;background:#FAF7F3;border-top:1px solid #EDE8E0;">
             <div style="font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:600;color:#1A1814;margin-bottom:10px;">Veri<span style="font-style:italic;color:#C4714A;">nest</span></div>
-            <p style="font-size:11px;line-height:1.7;color:#9A8F84;margin:0;">This is an automated schedule email from Verinest. Please manage visits, confirmations, and reschedules inside the platform.</p>
+            <p style="font-size:11px;line-height:1.7;color:#9A8F84;margin:0;">This is an automated schedule email from Verinest. Please manage visits, confirmations, and reschedules inside of platform.</p>
         </div>
         </div>
     </body>
@@ -853,3 +783,5 @@ fn humanize_booking_type(booking_type: &str) -> String {
             property_location = property_location,
         )
     }
+
+    // Include enhanced email templates

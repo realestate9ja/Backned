@@ -10,6 +10,10 @@ use sqlx::{FromRow, PgPool, Row};
 use uuid::Uuid;
 
 use crate::infrastructure::auth::PasswordService;
+use crate::infrastructure::email::service::{
+    header_asset_url, kyc_header_asset, HEADER_LEAD_ALERT, HEADER_NEW_MATCH,
+    HEADER_SECURITY_DARK,
+};
 
 use crate::{
     domain::{
@@ -561,7 +565,7 @@ pub async fn send_password_change_otp(
         .await?;
     let email = state
         .mail_service
-        .verification_code_email(user.email.clone(), &user.full_name, &code, "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-security-dark.svg");
+        .verification_code_email(user.email.clone(), &user.full_name, &code, &header_asset_url(HEADER_SECURITY_DARK));
     state.mail_service.send(email).await?;
 
     Ok(Json(crate::application::services::ValueAck {
@@ -1458,7 +1462,7 @@ pub async fn create_offer(
 
     // Send email to seeker
     if let Some((seeker_email, seeker_name)) = seeker {
-        let header_image_url = "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-confirmed.svg";
+        let header_image_url = header_asset_url(HEADER_NEW_MATCH);
         let offer_email = state.mail_service.offer_received_email(
             seeker_email,
             &seeker_name,
@@ -1466,7 +1470,7 @@ pub async fn create_offer(
             &property_title,
             &request_title,
             "https://app.verinest.ng/seeker/offers",
-            header_image_url,
+            &header_image_url,
         );
         let _ = state.mail_service.send(offer_email).await;
     }
@@ -1494,7 +1498,7 @@ pub async fn create_offer(
 
     // Send email to agent/landlord
     if let Some((contact_email, contact_name)) = property_contact {
-        let header_image_url = "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-lead-alert.svg";
+        let header_image_url = header_asset_url(HEADER_LEAD_ALERT);
         let offer_email = state.mail_service.offer_received_email(
             contact_email,
             &contact_name,
@@ -1502,7 +1506,7 @@ pub async fn create_offer(
             &property_title,
             &request_title,
             "https://app.verinest.ng/agent/leads",
-            header_image_url,
+            &header_image_url,
         );
         let _ = state.mail_service.send(offer_email).await;
     }
@@ -2575,7 +2579,7 @@ pub async fn admin_update_verification(
         &user_record.full_name,
         legacy_status,
         payload.verification_notes.as_deref(),
-        "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-verified.svg",
+        &kyc_header_asset(legacy_status),
     );
     state.mail_service.send(email).await?;
 

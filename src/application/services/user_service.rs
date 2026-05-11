@@ -16,6 +16,7 @@ use crate::{
     interfaces::http::errors::AppError,
     utils::{pagination::Pagination, validation},
 };
+use crate::infrastructure::email::service::kyc_header_asset;
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -172,7 +173,7 @@ impl UserService {
             &updated.full_name,
             &updated.verification_status,
             updated.verification_notes.as_deref(),
-            "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-verified.svg",
+            &kyc_header_asset(&updated.verification_status),
         );
         self.mail_service.send(email).await?;
 

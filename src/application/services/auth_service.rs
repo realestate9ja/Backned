@@ -6,7 +6,7 @@ use crate::{
     infrastructure::{
         auth::{JwtService, PasswordService},
         cache::CacheService,
-        email::MailService,
+        email::{MailService, service::{header_asset_url, HEADER_SECURITY_DARK, HEADER_WELCOME}},
     },
     interfaces::http::errors::AppError,
     utils::validation,
@@ -65,7 +65,7 @@ impl AuthService {
         let welcome_url = format!("{}/onboarding", self.app_base_url.trim_end_matches('/'));
         let welcome_email =
             self.mail_service
-                .welcome_email(user.email.clone(), &user.full_name, &welcome_url, "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-welcome.svg");
+                .welcome_email(user.email.clone(), &user.full_name, &welcome_url, &header_asset_url(HEADER_WELCOME));
         self.mail_service.send(welcome_email).await?;
         Ok(response)
     }
@@ -122,7 +122,7 @@ impl AuthService {
                 user.email.clone(),
                 &user.full_name,
                 &verification_link,
-                "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-security-dark.svg",
+                &header_asset_url(HEADER_SECURITY_DARK),
             );
             self.mail_service.send(email).await?;
         }
@@ -166,7 +166,7 @@ impl AuthService {
             .await?;
         let email =
             self.mail_service
-                .verification_code_email(user.email.clone(), &user.full_name, &code, "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-security-dark.svg");
+                .verification_code_email(user.email.clone(), &user.full_name, &code, &header_asset_url(HEADER_SECURITY_DARK));
         self.mail_service.send(email).await?;
 
         Ok(ValueAck {

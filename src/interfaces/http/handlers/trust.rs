@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use crate::{
     domain::trust::{CreateReportInput, CreateReviewInput, ModerateReportInput},
+    infrastructure::email::service::{header_asset_url, HEADER_REVIEW},
     interfaces::http::{errors::AppError, middleware::auth::AuthUser, state::AppState},
 };
 
@@ -131,7 +132,7 @@ pub async fn moderate_report(
                     action_label,
                     &review_notes,
                     &action_url,
-                    "https://res.cloudinary.com/dui0hakkq/image/upload/v1715020800/verinest/headers/header-security-dark.svg",
+                    &header_asset_url(HEADER_REVIEW),
                 );
                 if let Err(error) = state.mail_service.send(email).await {
                     tracing::error!("failed to send property moderation email: {error:?}");
