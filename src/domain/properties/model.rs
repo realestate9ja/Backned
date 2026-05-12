@@ -107,6 +107,7 @@ pub struct PropertyDetail {
     pub agent_id: Option<Uuid>,
     pub owner_name: String,
     pub agent_name: Option<String>,
+    pub company_name: Option<String>,
     pub exact_address: Option<String>,
     pub contact_name: Option<String>,
     pub contact_phone: Option<String>,

@@ -24,7 +24,8 @@ pub const HEADER_VIEWING: &str = "header-viewing.svg";
 pub const HEADER_WELCOME: &str = "header-welcome.svg";
 
 pub fn header_asset_url(file_name: &str) -> String {
-    format!("{HEADER_BASE_URL}/{file_name}")
+    // Add Cloudinary transformations: f_auto converts to best format (webp/png), q_auto optimizes quality, w_600 sets width
+    format!("{HEADER_BASE_URL}/f_auto,q_auto,w_600/{file_name}")
 }
 
 pub fn kyc_header_asset(status: &str) -> String {

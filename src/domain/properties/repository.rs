@@ -146,6 +146,7 @@ impl PropertyRepository {
                 p.agent_id,
                 owner.full_name AS owner_name,
                 agent.full_name AS agent_name,
+                ap.company_name,
                 p.exact_address,
                 p.contact_name,
                 p.contact_phone,
@@ -158,6 +159,7 @@ impl PropertyRepository {
             FROM properties p
             INNER JOIN users owner ON owner.id = p.owner_id
             LEFT JOIN users agent ON agent.id = p.agent_id
+            LEFT JOIN agent_profiles ap ON ap.user_id = p.agent_id
             LEFT JOIN (
                 SELECT property_id, COUNT(*)::bigint AS view_count
                 FROM property_views
@@ -199,6 +201,7 @@ impl PropertyRepository {
                 p.agent_id,
                 owner.full_name AS owner_name,
                 agent.full_name AS agent_name,
+                ap.company_name,
                 p.exact_address,
                 p.contact_name,
                 p.contact_phone,
@@ -211,6 +214,7 @@ impl PropertyRepository {
             FROM properties p
             INNER JOIN users owner ON owner.id = p.owner_id
             LEFT JOIN users agent ON agent.id = p.agent_id
+            LEFT JOIN agent_profiles ap ON ap.user_id = p.agent_id
             LEFT JOIN (
                 SELECT property_id, COUNT(*)::bigint AS view_count
                 FROM property_views
