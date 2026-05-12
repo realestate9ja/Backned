@@ -118,7 +118,7 @@ impl MailService {
         <a href="#">Unsubscribe</a>
       </div>
       <div class="footer-divider"></div>
-      <p class="footer-legal">© 2025 Verinest. All rights reserved. · Nigeria<br>You are receiving this because you signed up at verinest.ng</p>
+      <p class="footer-legal">© 2026 Verinest. All rights reserved. · Nigeria<br>You are receiving this because you signed up at verinest.ng</p>
     </div>
   </div>
 </body>
@@ -218,7 +218,7 @@ impl MailService {
       </div>
       <p class="footer-text">This is an automated security email from Verinest. If you have concerns about your account security, contact us at security@verinest.ng</p>
       <div class="footer-divider"></div>
-      <p class="footer-legal">© 2025 Verinest. All rights reserved.  Nigeria</p>
+      <p class="footer-legal">© 2026 Verinest. All rights reserved.  Nigeria</p>
     </div>
   </div>
 </body>
@@ -392,7 +392,7 @@ impl MailService {
         <a href="#">Unsubscribe</a>
       </div>
       <div class="footer-divider"></div>
-      <p class="footer-legal">© 2025 Verinest. All rights reserved.  Nigeria</p>
+      <p class="footer-legal">© 2026 Verinest. All rights reserved.  Nigeria</p>
     </div>
   </div>
 </body>
@@ -684,7 +684,7 @@ impl MailService {
         <a href="#">Notification Settings</a>
       </div>
       <div class="footer-divider"></div>
-      <p class="footer-legal">© 2025 Verinest, Nigeria · verinest.ng<br>To stop receiving lead alerts, update your notification preferences.</p>
+      <p class="footer-legal">© 2026 Verinest, Nigeria · verinest.ng<br>To stop receiving lead alerts, update your notification preferences.</p>
     </div>
   </div>
 </body>
