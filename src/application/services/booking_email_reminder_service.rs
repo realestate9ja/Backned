@@ -264,3 +264,5 @@ fn provider_schedule_url(app_base_url: &str, provider_role: &str) -> String {
         format!("{app_base_url}/provider/calendar")
     }
 }
+
+
