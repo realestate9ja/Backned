@@ -242,7 +242,14 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
         )
         .route("/uploads/presign", post(api_v1::uploads_presign))
         .route("/properties", get(api_v1::list_public_properties))
-        .route("/properties/{id}", get(properties::get_property))
+        .route(
+            "/properties/{id}",
+            get(properties::get_property)
+        )
+        .route(
+            "/properties/{id}/comments",
+            get(comments::get_property_comments),
+        )
         .route(
             "/properties/{id}/reviews",
             get(api_v1::list_property_reviews),
