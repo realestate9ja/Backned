@@ -1,5 +1,5 @@
 use crate::interfaces::http::{
-    handlers::{api_v1, auth, health, posts, properties, trust, users, workflow},
+    handlers::{api_v1, auth, comments, contact, health, posts, properties, trust, users, workflow},
     middleware::{
         audit::{audit_middleware, request_context_middleware},
         rate_limit::{auth_rate_limit_middleware, trust_rate_limit_middleware},
@@ -127,6 +127,38 @@ pub fn create_router(state: AppState) -> Router {
             )),
         )
         .route("/admin/reports/{id}/decision", post(trust::moderate_report))
+        .route(
+            "/properties/{property_id}/comments",
+            post(comments::create_property_comment).get(comments::get_property_comments),
+        )
+        .route(
+            "/comments/{comment_id}/replies",
+            post(comments::create_comment_reply),
+        )
+        .route(
+            "/comments/{comment_id}",
+            patch(comments::update_comment).delete(comments::delete_comment),
+        )
+        .route(
+            "/replies/{reply_id}",
+            patch(comments::update_reply).delete(comments::delete_reply),
+        )
+        .route(
+            "/admin/contact-message",
+            post(contact::create_contact_message),
+        )
+        .route(
+            "/admin/contact-messages",
+            get(contact::get_contact_messages),
+        )
+        .route(
+            "/admin/contact-messages/{message_id}",
+            get(contact::get_contact_message),
+        )
+        .route(
+            "/admin/contact-messages/{message_id}/read",
+            patch(contact::mark_message_as_read),
+        )
         .nest("/api/v1", create_api_v1_router(state.clone()))
         .layer(middleware::from_fn_with_state(
             state.clone(),

@@ -11,9 +11,10 @@ use crate::{
     },
     config::Settings,
     domain::{
-        audit::AuditLogRepository, notifications::NotificationRepository, posts::PostRepository,
-        properties::PropertyRepository, responses::ResponseRepository, trust::TrustRepository,
-        users::UserRepository, workflow::WorkflowRepository,
+        audit::AuditLogRepository, comments::CommentRepository, contact::ContactMessageRepository,
+        notifications::NotificationRepository, posts::PostRepository, properties::PropertyRepository,
+        responses::ResponseRepository, trust::TrustRepository, users::UserRepository,
+        workflow::WorkflowRepository,
     },
     infrastructure::rate_limit::RateLimiter,
     infrastructure::{
@@ -24,6 +25,7 @@ use crate::{
     },
 };
 use sqlx::PgPool;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -37,6 +39,8 @@ pub struct AppState {
     pub audit_service: AuditService,
     pub jwt_service: JwtService,
     pub user_repository: UserRepository,
+    pub comment_repository: Arc<CommentRepository>,
+    pub contact_repository: Arc<ContactMessageRepository>,
     pub mail_service: MailService,
     pub admin_bootstrap_token: String,
     pub rate_limiter: RateLimiter,
@@ -52,6 +56,8 @@ impl AppState {
         let workflow_repository = WorkflowRepository::new(pool.clone());
         let trust_repository = TrustRepository::new(pool.clone());
         let audit_repository = AuditLogRepository::new(pool.clone());
+        let comment_repository = Arc::new(CommentRepository::new(pool.clone()));
+        let contact_repository = Arc::new(ContactMessageRepository::new(pool.clone()));
 
         let password_service = PasswordService;
         let jwt_service = JwtService::new(&settings);
@@ -133,6 +139,8 @@ impl AppState {
             audit_service,
             jwt_service,
             user_repository,
+            comment_repository,
+            contact_repository,
             mail_service,
             admin_bootstrap_token: settings.admin_bootstrap_token,
             rate_limiter,
