@@ -16,6 +16,16 @@ pub struct CreatePostInput {
     pub pricing_preference: String,
     pub desired_features: Vec<String>,
     pub description: String,
+    #[serde(default)]
+    pub target_agent_id: Option<uuid::Uuid>,
+    #[serde(default)]
+    pub target_property_id: Option<uuid::Uuid>,
+    #[serde(default)]
+    pub target_property_title: Option<String>,
+    #[serde(default)]
+    pub target_property_image_url: Option<String>,
+    #[serde(default)]
+    pub target_property_location: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -47,6 +57,11 @@ pub struct Post {
     pub max_budget: i64,
     pub pricing_preference: String,
     pub desired_features: Vec<String>,
+    pub target_agent_id: Option<Uuid>,
+    pub target_property_id: Option<Uuid>,
+    pub target_property_title: Option<String>,
+    pub target_property_image_url: Option<String>,
+    pub target_property_location: Option<String>,
     pub status: String,
     pub description: String,
     pub created_at: DateTime<Utc>,
@@ -70,6 +85,16 @@ pub struct PostListItem {
     pub max_budget: i64,
     pub pricing_preference: String,
     pub desired_features: Vec<String>,
+    #[sqlx(default)]
+    pub target_agent_id: Option<Uuid>,
+    #[sqlx(default)]
+    pub target_property_id: Option<Uuid>,
+    #[sqlx(default)]
+    pub target_property_title: Option<String>,
+    #[sqlx(default)]
+    pub target_property_image_url: Option<String>,
+    #[sqlx(default)]
+    pub target_property_location: Option<String>,
     pub status: String,
     pub description: String,
     pub response_count: i64,

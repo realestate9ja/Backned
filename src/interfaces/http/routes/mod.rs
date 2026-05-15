@@ -248,7 +248,7 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/properties/{id}/comments",
-            get(comments::get_property_comments),
+            get(comments::get_property_comments).post(comments::create_property_comment),
         )
         .route(
             "/properties/{id}/reviews",

@@ -44,7 +44,7 @@ impl PostService {
     pub async fn create_post(
         &self,
         actor: &User,
-        input: CreatePostInput,
+        mut input: CreatePostInput,
     ) -> Result<Uuid, AppError> {
         validation::validate_required(&input.request_title, "request_title")?;
         validation::validate_required(&input.area, "area")?;
@@ -67,18 +67,57 @@ impl PostService {
         validation::validate_non_empty_vec(&input.desired_features, "desired_features")?;
         validation::validate_required(&input.description, "description")?;
 
+        if let Some(target_property_id) = input.target_property_id {
+            let property = self
+                .properties
+                .find_published_detail_by_id(target_property_id)
+                .await?
+                .ok_or_else(|| AppError::not_found("target property not found"))?;
+            let target_contact_id = property.agent_id.unwrap_or(property.owner_id);
+
+            if let Some(target_agent_id) = input.target_agent_id {
+                if target_agent_id != target_contact_id {
+                    return Err(AppError::bad_request(
+                        "target agent does not match the selected property",
+                    ));
+                }
+            } else {
+                input.target_agent_id = Some(target_contact_id);
+            }
+
+            input.target_property_title = Some(property.title.clone());
+            input.target_property_image_url = property.images.first().cloned();
+            input.target_property_location = Some(property.location.clone());
+        }
+
         let post = self.posts.create(&input, actor.id).await?;
-        let recipients = self
-            .users
-            .list_notifiable_agents(&input.city, &input.state)
-            .await?
-            .into_iter()
-            .map(|agent| AgentNotificationTarget {
-                agent_id: agent.id,
-                matched_city: agent.operating_city,
-                matched_state: agent.operating_state,
-            })
-            .collect::<Vec<_>>();
+        
+        // If target_agent_id is specified, only notify that agent
+        // Otherwise, notify all notifiable agents in the area
+        let recipients = if let Some(target_agent_id) = input.target_agent_id {
+            // Verify target agent exists and is valid
+            if let Some(agent) = self.users.find_agent_by_id(target_agent_id).await? {
+                vec![AgentNotificationTarget {
+                    agent_id: agent.id,
+                    matched_city: agent.operating_city.unwrap_or_default(),
+                    matched_state: agent.operating_state.unwrap_or_default(),
+                }]
+            } else {
+                return Err(AppError::not_found("target agent not found"));
+            }
+        } else {
+            self.users
+                .list_notifiable_agents(&input.city, &input.state)
+                .await?
+                .into_iter()
+                .map(|agent| AgentNotificationTarget {
+                    agent_id: agent.id,
+                    matched_city: agent.operating_city,
+                    matched_state: agent.operating_state,
+                })
+                .collect::<Vec<_>>()
+        };
+        
         self.notifications
             .create_for_post(post.id, &recipients)
             .await?;
