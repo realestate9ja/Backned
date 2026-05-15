@@ -24,8 +24,9 @@ pub const HEADER_VIEWING: &str = "header-viewing.svg";
 pub const HEADER_WELCOME: &str = "header-welcome.svg";
 
 pub fn header_asset_url(file_name: &str) -> String {
-    // Add Cloudinary transformations: f_auto converts to best format (webp/png), q_auto optimizes quality, w_600 sets width
-    format!("{HEADER_BASE_URL}/f_auto,q_auto,w_600/{file_name}")
+    // Email clients are far more reliable with raster assets than inline SVG/webp.
+    // Force PNG delivery so Gmail/Outlook preserve the header visuals consistently.
+    format!("{HEADER_BASE_URL}/f_png,q_auto,w_1120/{file_name}")
 }
 
 pub fn kyc_header_asset(status: &str) -> String {
@@ -180,45 +181,56 @@ impl MailService {
 <head>\
 <meta charset=\"UTF-8\">\
 <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\
+<meta name=\"x-apple-disable-message-reformatting\">\
+<meta name=\"color-scheme\" content=\"light only\">\
+<meta name=\"supported-color-schemes\" content=\"light only\">\
+<title>Verinest</title>\
+<!--[if mso]>\
 <style type=\"text/css\">\
-* {{ margin: 0; padding: 0; box-sizing: border-box; }}\
-body {{ margin: 0; padding: 20px; background: #E8E2DA; font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }}\
-.email-shell {{ max-width: 560px; margin: 0 auto; background: #FFFFFF; border-radius: 14px; overflow: hidden; box-shadow: 0 8px 40px rgba(0,0,0,0.10); }}\
-.email-header-img {{ width: 100%; display: block; max-height: 200px; object-fit: cover; }}\
-.email-body {{ padding: 36px 40px 32px; }}\
-.greeting {{ font-size: 15px; font-weight: 600; color: #1A1814; margin-bottom: 14px; }}\
-.body-text {{ font-size: 13.5px; color: #5A5248; line-height: 1.75; margin-bottom: 20px; }}\
-.email-divider {{ height: 1px; background: #EDE8E0; margin: 28px 0; }}\
-.email-footer {{ background: #161412; padding: 28px 40px; border-top: 1px solid #2A2520; }}\
-.footer-text {{ font-size: 11px; color: #5A5048; line-height: 1.7; margin-bottom: 16px; }}\
-.footer-links {{ display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 16px; }}\
-.footer-links a {{ font-size: 10px; color: #7A6F64; text-decoration: none; letter-spacing: 0.06em; }}\
-.footer-divider {{ height: 1px; background: #2A2520; margin-bottom: 14px; }}\
-.footer-legal {{ font-size: 10px; color: #3A3028; line-height: 1.6; }}\
+body, table, td, a, p {{ font-family: Arial, sans-serif !important; }}\
 </style>\
+<![endif]-->\
 </head>\
-<body>\
-<div class=\"email-shell\">\
-<img src=\"{0}\" alt=\"Verinest Email Header\" class=\"email-header-img\" />\
-<div class=\"email-body\">\
-<p class=\"greeting\">{1}</p>\
-<p class=\"body-text\">{2}</p>\
+<body style=\"margin:0;padding:0;background-color:#E8E2DA;background:#E8E2DA;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;\">\
+<center style=\"width:100%;background-color:#E8E2DA;background:#E8E2DA;\">\
+<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" style=\"background-color:#E8E2DA;background:#E8E2DA;mso-table-lspace:0pt;mso-table-rspace:0pt;\">\
+<tr>\
+<td align=\"center\" style=\"padding:24px 12px;\">\
+<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"560\" style=\"width:560px;max-width:560px;background-color:#FFFFFF;background:#FFFFFF;border-radius:20px;overflow:hidden;\" bgcolor=\"#FFFFFF\">\
+<tr>\
+<td style=\"padding:0;\">\
+<img src=\"{0}\" alt=\"Verinest Email Header\" width=\"560\" style=\"display:block;width:100%;max-width:560px;height:auto;border:0;outline:none;text-decoration:none;\" />\
+</td>\
+</tr>\
+<tr>\
+<td style=\"padding:36px 40px 32px 40px;background-color:#FFFFFF;background:#FFFFFF;\" bgcolor=\"#FFFFFF\">\
+<p style=\"margin:0 0 14px 0;font-size:15px;line-height:1.5;font-weight:600;color:#1A1814;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">{1}</p>\
+<p style=\"margin:0 0 20px 0;font-size:13.5px;line-height:1.75;color:#5A5248;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">{2}</p>\
 {3}\
-<div class=\"email-divider\"></div>\
-<p class=\"body-text\" style=\"font-size:12px;color:#9A8F84;margin-bottom:0;\">{4}</p>\
-</div>\
-<div class=\"email-footer\">\
-<p class=\"footer-text\">Verinest helps seekers, agents, and landlords connect through verified listings, clearer pricing, and faster rental matching across Nigeria.</p>\
-<div class=\"footer-links\">\
-<a href=\"https://verinest.ng\">Browse Homes</a>\
-<a href=\"https://verinest.ng/post\">Post a Need</a>\
-<a href=\"https://verinest.ng/agents\">For Agents</a>\
-<a href=\"https://verinest.ng/help\">Help Centre</a>\
-</div>\
-<div class=\"footer-divider\"></div>\
-<p class=\"footer-legal\">© 2026 Verinest. All rights reserved. · Nigeria<br>You are receiving this because you have an account at verinest.ng</p>\
-</div>\
-</div>\
+<div style=\"height:1px;line-height:1px;font-size:1px;background:#EDE8E0;margin:28px 0;\">&nbsp;</div>\
+<p style=\"margin:0;font-size:12px;line-height:1.75;color:#9A8F84;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">{4}</p>\
+</td>\
+</tr>\
+<tr>\
+<td style=\"padding:28px 40px;background-color:#161412;background:#161412;border-top:1px solid #2A2520;\" bgcolor=\"#161412\">\
+<p style=\"margin:0 0 16px 0;font-size:11px;line-height:1.7;color:#8C8277;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">Verinest helps seekers, agents, and landlords connect through verified listings, clearer pricing, and faster rental matching across Nigeria.</p>\
+<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" style=\"margin:0 0 16px 0;\">\
+<tr>\
+<td style=\"padding:0 18px 0 0;\"><a href=\"https://verinest.ng\" style=\"font-size:10px;line-height:1.4;color:#B89E89;text-decoration:none;letter-spacing:0.06em;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">Browse Homes</a></td>\
+<td style=\"padding:0 18px 0 0;\"><a href=\"https://verinest.ng/post\" style=\"font-size:10px;line-height:1.4;color:#B89E89;text-decoration:none;letter-spacing:0.06em;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">Post a Need</a></td>\
+<td style=\"padding:0 18px 0 0;\"><a href=\"https://verinest.ng/agents\" style=\"font-size:10px;line-height:1.4;color:#B89E89;text-decoration:none;letter-spacing:0.06em;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">For Agents</a></td>\
+<td style=\"padding:0;\"><a href=\"https://verinest.ng/help\" style=\"font-size:10px;line-height:1.4;color:#B89E89;text-decoration:none;letter-spacing:0.06em;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">Help Centre</a></td>\
+</tr>\
+</table>\
+<div style=\"height:1px;line-height:1px;font-size:1px;background:#2A2520;margin:0 0 14px 0;\">&nbsp;</div>\
+<p style=\"margin:0;font-size:10px;line-height:1.6;color:#6D6157;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">© 2026 Verinest. All rights reserved. · Nigeria<br>You are receiving this because you have an account at verinest.ng</p>\
+</td>\
+</tr>\
+</table>\
+</td>\
+</tr>\
+</table>\
+</center>\
 </body>\
 </html>",
             header_image_url, greeting, body_text, cta_html, footer_text,
