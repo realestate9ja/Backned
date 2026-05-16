@@ -31,6 +31,10 @@ impl CommentService {
         }
     }
 
+    async fn user_avatar_url(&self, user_id: Uuid) -> Result<Option<String>> {
+        self.users.find_avatar_url(user_id).await.map_err(Into::into)
+    }
+
     pub async fn create_comment(
         &self,
         property_id: Uuid,
@@ -44,7 +48,7 @@ impl CommentService {
         let author = self.users.find_by_id(user_id).await?
             .ok_or(anyhow::anyhow!("User not found"))?;
         let author_role = author.role.as_str().to_string();
-        let avatar: Option<String> = None;
+        let avatar = self.user_avatar_url(user_id).await?;
 
         // Get property agent to notify
         let property_agent: (Uuid,) = sqlx::query_as(
@@ -108,7 +112,7 @@ impl CommentService {
         let author = self.users.find_by_id(user_id).await?
             .ok_or(anyhow::anyhow!("User not found"))?;
         let author_role = author.role.as_str().to_string();
-        let avatar: Option<String> = None;
+        let avatar = self.user_avatar_url(user_id).await?;
 
         let truncated_content = if input.content.len() > 100 {
             format!("{}...", &input.content[..100])
@@ -194,7 +198,7 @@ impl CommentService {
             let author = self.users.find_by_id(comment.user_id).await?
                 .ok_or(anyhow::anyhow!("User not found"))?;
             let author_role = author.role.as_str().to_string();
-            let avatar: Option<String> = None;
+            let avatar = self.user_avatar_url(comment.user_id).await?;
 
             let comment_with_author = CommentWithAuthor {
                 comment: comment.clone(),
@@ -211,7 +215,7 @@ impl CommentService {
                 let reply_author = self.users.find_by_id(reply.user_id).await?
                     .ok_or(anyhow::anyhow!("User not found"))?;
                 let reply_author_role = reply_author.role.as_str().to_string();
-                let reply_avatar: Option<String> = None;
+                let reply_avatar = self.user_avatar_url(reply.user_id).await?;
 
                 replies_with_authors.push(ReplyWithAuthor {
                     reply,

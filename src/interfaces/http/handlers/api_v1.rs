@@ -140,6 +140,13 @@ pub struct UpdateBookingInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ConfirmBookingOutcomeInput {
+    pub outcome: String,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateOfferStatusInput {
     pub status: String,
 }
@@ -377,6 +384,24 @@ pub struct BookingView {
     pub provider_phone: Option<String>,
     #[sqlx(default)]
     pub provider_avatar_url: Option<String>,
+    #[sqlx(default)]
+    pub property_listing_type: Option<String>,
+    #[sqlx(default)]
+    pub seeker_outcome: Option<String>,
+    #[sqlx(default)]
+    pub seeker_outcome_note: Option<String>,
+    #[sqlx(default)]
+    pub seeker_outcome_confirmed_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub provider_outcome: Option<String>,
+    #[sqlx(default)]
+    pub provider_outcome_note: Option<String>,
+    #[sqlx(default)]
+    pub provider_outcome_confirmed_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub outcome_resolution: Option<String>,
+    pub outcome_follow_up_required: bool,
+    pub listing_outcome_applied: bool,
 }
 
 #[derive(Debug, Serialize, FromRow)]
@@ -1113,6 +1138,21 @@ pub async fn create_verification(
     .bind(payload.notes)
     .fetch_one(&state.pool)
     .await?;
+
+    // Update user's verification_status to pending when verification is submitted
+    if matches!(user.role, UserRole::Agent | UserRole::Landlord) {
+        sqlx::query(
+            r#"
+            UPDATE users
+            SET verification_status = 'pending',
+                updated_at = NOW()
+            WHERE id = $1
+            "#,
+        )
+        .bind(user.id)
+        .execute(&state.pool)
+        .await?;
+    }
 
     Ok((StatusCode::CREATED, Json(verification)))
 }
@@ -1951,7 +1991,17 @@ pub async fn create_booking(
         INSERT INTO bookings (id, offer_id, property_id, seeker_user_id, provider_user_id, booking_type, scheduled_for, notes)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING id, offer_id, property_id, unit_id, seeker_user_id, provider_user_id,
-                  booking_type, scheduled_for, status, notes, created_at, updated_at
+                  booking_type, scheduled_for, status, notes, created_at, updated_at,
+                  NULL::text AS property_title,
+                  NULL::text AS property_location,
+                  NULL::text AS provider_name,
+                  NULL::text AS seeker_name,
+                  NULL::text AS provider_phone,
+                  NULL::text AS provider_avatar_url,
+                  NULL::text AS property_listing_type,
+                  seeker_outcome, seeker_outcome_note, seeker_outcome_confirmed_at,
+                  provider_outcome, provider_outcome_note, provider_outcome_confirmed_at,
+                  outcome_resolution, outcome_follow_up_required, listing_outcome_applied
         "#,
     )
     .bind(Uuid::new_v4())
@@ -2087,7 +2137,11 @@ pub async fn update_booking(
                   NULL::text AS provider_name,
                   NULL::text AS seeker_name,
                   NULL::text AS provider_phone,
-                  NULL::text AS provider_avatar_url
+                  NULL::text AS provider_avatar_url,
+                  NULL::text AS property_listing_type,
+                  b.seeker_outcome, b.seeker_outcome_note, b.seeker_outcome_confirmed_at,
+                  b.provider_outcome, b.provider_outcome_note, b.provider_outcome_confirmed_at,
+                  b.outcome_resolution, b.outcome_follow_up_required, b.listing_outcome_applied
         "#,
     )
     .bind(id)
@@ -2134,6 +2188,426 @@ pub async fn update_booking(
     Ok(Json(booking))
 }
 
+async fn notify_admin_booking_outcome_conflict(
+    pool: &PgPool,
+    booking_id: Uuid,
+    property_id: Uuid,
+    seeker_user_id: Uuid,
+    provider_user_id: Uuid,
+    seeker_outcome: &str,
+    provider_outcome: &str,
+) -> Result<(), AppError> {
+    let admin_ids = sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE role = 'admin'")
+        .fetch_all(pool)
+        .await?;
+
+    for admin_id in admin_ids {
+        insert_notification(
+            pool,
+            admin_id,
+            "booking_outcome_conflict",
+            "Booking outcome conflict",
+            "A seeker and provider submitted conflicting booking outcomes that need follow-up.",
+            Some("/admin/reports"),
+            json!({
+                "bookingId": booking_id,
+                "propertyId": property_id,
+                "seekerUserId": seeker_user_id,
+                "providerUserId": provider_user_id,
+                "seekerOutcome": seeker_outcome,
+                "providerOutcome": provider_outcome
+            }),
+        )
+        .await?;
+    }
+
+    Ok(())
+}
+
+async fn resolve_booking_outcome_if_ready(
+    pool: &PgPool,
+    booking_id: Uuid,
+) -> Result<BookingView, AppError> {
+    let row = sqlx::query(
+        r#"
+        SELECT
+            b.id,
+            b.offer_id,
+            b.property_id,
+            b.unit_id,
+            b.seeker_user_id,
+            b.provider_user_id,
+            b.booking_type,
+            b.scheduled_for,
+            b.status,
+            b.notes,
+            b.created_at,
+            b.updated_at,
+            b.seeker_outcome,
+            b.seeker_outcome_note,
+            b.seeker_outcome_confirmed_at,
+            b.provider_outcome,
+            b.provider_outcome_note,
+            b.provider_outcome_confirmed_at,
+            b.outcome_resolution,
+            b.outcome_follow_up_required,
+            b.listing_outcome_applied,
+            p.title AS property_title,
+            p.location AS property_location,
+            p.listing_type AS property_listing_type,
+            provider.full_name AS provider_name,
+            seeker.full_name AS seeker_name,
+            provider.phone AS provider_phone,
+            provider_profile.avatar_url AS provider_avatar_url
+        FROM bookings b
+        INNER JOIN properties p ON p.id = b.property_id
+        INNER JOIN users provider ON provider.id = b.provider_user_id
+        INNER JOIN users seeker ON seeker.id = b.seeker_user_id
+        LEFT JOIN profiles provider_profile ON provider_profile.user_id = provider.id
+        WHERE b.id = $1
+        "#,
+    )
+    .bind(booking_id)
+    .fetch_one(pool)
+    .await?;
+
+    let seeker_outcome = row.try_get::<Option<String>, _>("seeker_outcome")?;
+    let provider_outcome = row.try_get::<Option<String>, _>("provider_outcome")?;
+    let property_id = row.get::<Uuid, _>("property_id");
+    let unit_id = row.try_get::<Option<Uuid>, _>("unit_id")?;
+    let listing_type = row
+        .try_get::<Option<String>, _>("property_listing_type")?
+        .unwrap_or_else(|| "rent".to_string());
+    let seeker_user_id = row.get::<Uuid, _>("seeker_user_id");
+    let provider_user_id = row.get::<Uuid, _>("provider_user_id");
+
+    if let (Some(seeker_outcome), Some(provider_outcome)) =
+        (seeker_outcome.clone(), provider_outcome.clone())
+    {
+        if seeker_outcome == provider_outcome {
+            let resolution = if seeker_outcome == "completed" {
+                "aligned_completed"
+            } else {
+                "aligned_not_completed"
+            };
+            let mut listing_outcome_applied = false;
+
+            if seeker_outcome == "completed" {
+                match listing_type.as_str() {
+                    "sale" => {
+                        sqlx::query(
+                            "UPDATE properties SET status = 'sold_out', updated_at = NOW() WHERE id = $1",
+                        )
+                        .bind(property_id)
+                        .execute(pool)
+                        .await?;
+                    }
+                    "shortlet" => {
+                        sqlx::query(
+                            "UPDATE properties SET status = 'in_use', updated_at = NOW() WHERE id = $1",
+                        )
+                        .bind(property_id)
+                        .execute(pool)
+                        .await?;
+
+                        if let Some(unit_id) = unit_id {
+                            sqlx::query(
+                                "UPDATE units SET occupancy_status = 'occupied', listing_status = 'paused', updated_at = NOW() WHERE id = $1",
+                            )
+                            .bind(unit_id)
+                            .execute(pool)
+                            .await?;
+                        }
+                    }
+                    _ => {
+                        sqlx::query(
+                            "UPDATE properties SET status = 'rented_out', updated_at = NOW() WHERE id = $1",
+                        )
+                        .bind(property_id)
+                        .execute(pool)
+                        .await?;
+
+                        if let Some(unit_id) = unit_id {
+                            sqlx::query(
+                                "UPDATE units SET occupancy_status = 'occupied', listing_status = 'paused', updated_at = NOW() WHERE id = $1",
+                            )
+                            .bind(unit_id)
+                            .execute(pool)
+                            .await?;
+                        }
+                    }
+                }
+                listing_outcome_applied = true;
+            }
+
+            sqlx::query(
+                r#"
+                UPDATE bookings
+                SET outcome_resolution = $2,
+                    outcome_follow_up_required = FALSE,
+                    listing_outcome_applied = $3,
+                    status = 'completed',
+                    updated_at = NOW()
+                WHERE id = $1
+                "#,
+            )
+            .bind(booking_id)
+            .bind(resolution)
+            .bind(listing_outcome_applied)
+            .execute(pool)
+            .await?;
+
+            insert_notification(
+                pool,
+                seeker_user_id,
+                "booking_outcome_resolved",
+                "Booking outcome confirmed",
+                "Both sides confirmed the outcome of this booking.",
+                Some("/seeker/bookings"),
+                json!({
+                    "bookingId": booking_id,
+                    "propertyId": property_id,
+                    "resolution": resolution,
+                    "listingOutcomeApplied": listing_outcome_applied
+                }),
+            )
+            .await?;
+
+            insert_notification(
+                pool,
+                provider_user_id,
+                "booking_outcome_resolved",
+                "Booking outcome confirmed",
+                "Both sides confirmed the outcome of this booking.",
+                Some("/provider/calendar"),
+                json!({
+                    "bookingId": booking_id,
+                    "propertyId": property_id,
+                    "resolution": resolution,
+                    "listingOutcomeApplied": listing_outcome_applied
+                }),
+            )
+            .await?;
+        } else {
+            sqlx::query(
+                r#"
+                UPDATE bookings
+                SET outcome_resolution = 'conflict',
+                    outcome_follow_up_required = TRUE,
+                    listing_outcome_applied = FALSE,
+                    updated_at = NOW()
+                WHERE id = $1
+                "#,
+            )
+            .bind(booking_id)
+            .execute(pool)
+            .await?;
+
+            notify_admin_booking_outcome_conflict(
+                pool,
+                booking_id,
+                property_id,
+                seeker_user_id,
+                provider_user_id,
+                &seeker_outcome,
+                &provider_outcome,
+            )
+            .await?;
+
+            insert_notification(
+                pool,
+                seeker_user_id,
+                "booking_outcome_conflict",
+                "Booking outcome needs follow-up",
+                "Your booking outcome does not match the provider's confirmation. Support or admin review may follow.",
+                Some("/seeker/bookings"),
+                json!({
+                    "bookingId": booking_id,
+                    "propertyId": property_id
+                }),
+            )
+            .await?;
+
+            insert_notification(
+                pool,
+                provider_user_id,
+                "booking_outcome_conflict",
+                "Booking outcome needs follow-up",
+                "Your booking outcome does not match the seeker's confirmation. Support or admin review may follow.",
+                Some("/provider/calendar"),
+                json!({
+                    "bookingId": booking_id,
+                    "propertyId": property_id
+                }),
+            )
+            .await?;
+        }
+    }
+
+    let booking = sqlx::query_as::<_, BookingView>(
+        r#"
+        SELECT
+            b.id, b.offer_id, b.property_id, b.unit_id, b.seeker_user_id, b.provider_user_id,
+            b.booking_type, b.scheduled_for, b.status, b.notes, b.created_at, b.updated_at,
+            p.title AS property_title,
+            p.location AS property_location,
+            provider.full_name AS provider_name,
+            seeker.full_name AS seeker_name,
+            provider.phone AS provider_phone,
+            provider_profile.avatar_url AS provider_avatar_url,
+            p.listing_type AS property_listing_type,
+            b.seeker_outcome, b.seeker_outcome_note, b.seeker_outcome_confirmed_at,
+            b.provider_outcome, b.provider_outcome_note, b.provider_outcome_confirmed_at,
+            b.outcome_resolution, b.outcome_follow_up_required, b.listing_outcome_applied
+        FROM bookings b
+        INNER JOIN properties p ON p.id = b.property_id
+        INNER JOIN users provider ON provider.id = b.provider_user_id
+        INNER JOIN users seeker ON seeker.id = b.seeker_user_id
+        LEFT JOIN profiles provider_profile ON provider_profile.user_id = provider.id
+        WHERE b.id = $1
+        "#,
+    )
+    .bind(booking_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(booking)
+}
+
+pub async fn confirm_booking_seeker_outcome(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<ConfirmBookingOutcomeInput>,
+) -> Result<Json<BookingView>, AppError> {
+    if user.role != UserRole::Seeker {
+        return Err(AppError::forbidden("only seekers can confirm booking outcomes"));
+    }
+
+    let outcome = payload.outcome.trim().to_lowercase();
+    if !matches!(outcome.as_str(), "completed" | "not_completed") {
+        return Err(AppError::bad_request("invalid booking outcome"));
+    }
+
+    let booking_exists = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM bookings WHERE id = $1 AND seeker_user_id = $2)",
+    )
+    .bind(id)
+    .bind(user.id)
+    .fetch_one(&state.pool)
+    .await?;
+    if !booking_exists {
+        return Err(AppError::not_found("booking not found"));
+    }
+
+    let row = sqlx::query(
+        r#"
+        UPDATE bookings
+        SET seeker_outcome = $2,
+            seeker_outcome_note = $3,
+            seeker_outcome_confirmed_at = NOW(),
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING provider_user_id, property_id, provider_outcome
+        "#,
+    )
+    .bind(id)
+    .bind(&outcome)
+    .bind(payload.note.as_deref())
+    .fetch_one(&state.pool)
+    .await?;
+
+    let provider_user_id = row.get::<Uuid, _>("provider_user_id");
+    let property_id = row.get::<Uuid, _>("property_id");
+    let provider_outcome = row.try_get::<Option<String>, _>("provider_outcome")?;
+
+    if provider_outcome.is_none() {
+        insert_notification(
+            &state.pool,
+            provider_user_id,
+            "booking_outcome_confirmation_requested",
+            "Seeker confirmed booking outcome",
+            "The seeker has confirmed the outcome of this booking. Please confirm whether the visit completed successfully.",
+            Some("/provider/calendar"),
+            json!({
+                "bookingId": id,
+                "propertyId": property_id,
+                "seekerOutcome": outcome
+            }),
+        )
+        .await?;
+    }
+
+    Ok(Json(resolve_booking_outcome_if_ready(&state.pool, id).await?))
+}
+
+pub async fn confirm_booking_provider_outcome(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<ConfirmBookingOutcomeInput>,
+) -> Result<Json<BookingView>, AppError> {
+    if !matches!(user.role, UserRole::Agent | UserRole::Landlord) {
+        return Err(AppError::forbidden("only providers can confirm booking outcomes"));
+    }
+
+    let outcome = payload.outcome.trim().to_lowercase();
+    if !matches!(outcome.as_str(), "completed" | "not_completed") {
+        return Err(AppError::bad_request("invalid booking outcome"));
+    }
+
+    let booking_exists = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM bookings WHERE id = $1 AND provider_user_id = $2)",
+    )
+    .bind(id)
+    .bind(user.id)
+    .fetch_one(&state.pool)
+    .await?;
+    if !booking_exists {
+        return Err(AppError::not_found("booking not found"));
+    }
+
+    let row = sqlx::query(
+        r#"
+        UPDATE bookings
+        SET provider_outcome = $2,
+            provider_outcome_note = $3,
+            provider_outcome_confirmed_at = NOW(),
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING seeker_user_id, property_id, seeker_outcome
+        "#,
+    )
+    .bind(id)
+    .bind(&outcome)
+    .bind(payload.note.as_deref())
+    .fetch_one(&state.pool)
+    .await?;
+
+    let seeker_user_id = row.get::<Uuid, _>("seeker_user_id");
+    let property_id = row.get::<Uuid, _>("property_id");
+    let seeker_outcome = row.try_get::<Option<String>, _>("seeker_outcome")?;
+
+    if seeker_outcome.is_none() {
+        insert_notification(
+            &state.pool,
+            seeker_user_id,
+            "booking_outcome_confirmation_requested",
+            "Provider confirmed booking outcome",
+            "The provider has confirmed the outcome of this booking. Please confirm whether the visit completed successfully.",
+            Some("/seeker/bookings"),
+            json!({
+                "bookingId": id,
+                "propertyId": property_id,
+                "providerOutcome": outcome
+            }),
+        )
+        .await?;
+    }
+
+    Ok(Json(resolve_booking_outcome_if_ready(&state.pool, id).await?))
+}
+
 pub async fn list_seeker_bookings(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
@@ -2151,7 +2625,11 @@ pub async fn list_seeker_bookings(
             provider.full_name AS provider_name,
             seeker.full_name AS seeker_name,
             provider.phone AS provider_phone,
-            provider_profile.avatar_url AS provider_avatar_url
+            provider_profile.avatar_url AS provider_avatar_url,
+            p.listing_type AS property_listing_type,
+            b.seeker_outcome, b.seeker_outcome_note, b.seeker_outcome_confirmed_at,
+            b.provider_outcome, b.provider_outcome_note, b.provider_outcome_confirmed_at,
+            b.outcome_resolution, b.outcome_follow_up_required, b.listing_outcome_applied
         FROM bookings b
         INNER JOIN properties p ON p.id = b.property_id
         INNER JOIN users provider ON provider.id = b.provider_user_id
@@ -2184,7 +2662,11 @@ pub async fn list_agent_bookings(
             provider.full_name AS provider_name,
             seeker.full_name AS seeker_name,
             provider.phone AS provider_phone,
-            provider_profile.avatar_url AS provider_avatar_url
+            provider_profile.avatar_url AS provider_avatar_url,
+            p.listing_type AS property_listing_type,
+            b.seeker_outcome, b.seeker_outcome_note, b.seeker_outcome_confirmed_at,
+            b.provider_outcome, b.provider_outcome_note, b.provider_outcome_confirmed_at,
+            b.outcome_resolution, b.outcome_follow_up_required, b.listing_outcome_applied
         FROM bookings b
         INNER JOIN properties p ON p.id = b.property_id
         INNER JOIN users provider ON provider.id = b.provider_user_id
@@ -2780,11 +3262,13 @@ pub async fn landlord_dashboard_overview(
     .fetch_one(&state.pool)
     .await?;
 
+    // Allow access if verification is verified, approved, or pending (in progress)
     if verification_status.as_deref() != Some("verified")
         && verification_status.as_deref() != Some("approved")
+        && verification_status.as_deref() != Some("pending")
     {
         return Err(AppError::forbidden(
-            "please complete your identity verification and facial verification to access the dashboard",
+            "please complete your identity verification to access the dashboard",
         ));
     }
 

@@ -14,6 +14,9 @@ pub enum PropertyStatus {
     Published,
     Hidden,
     Suspended,
+    RentedOut,
+    SoldOut,
+    InUse,
 }
 
 #[derive(Debug, Deserialize)]
