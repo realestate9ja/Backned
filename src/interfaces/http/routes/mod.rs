@@ -251,6 +251,10 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
             get(comments::get_property_comments).post(comments::create_property_comment),
         )
         .route(
+            "/comments/{comment_id}/replies",
+            post(comments::create_comment_reply),
+        )
+        .route(
             "/properties/{id}/reviews",
             get(api_v1::list_property_reviews),
         )
