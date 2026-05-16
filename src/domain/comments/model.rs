@@ -46,6 +46,34 @@ pub struct ReplyWithAuthor {
     pub author_avatar: Option<String>,
 }
 
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct CommentWithAuthorRow {
+    pub id: Uuid,
+    pub property_id: Uuid,
+    pub user_id: Uuid,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub deleted_at: Option<DateTime<Utc>>,
+    pub author_name: String,
+    pub author_role: String,
+    pub author_avatar: Option<String>,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct ReplyWithAuthorRow {
+    pub id: Uuid,
+    pub comment_id: Uuid,
+    pub user_id: Uuid,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub deleted_at: Option<DateTime<Utc>>,
+    pub author_name: String,
+    pub author_role: String,
+    pub author_avatar: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateCommentInput {
     pub content: String,

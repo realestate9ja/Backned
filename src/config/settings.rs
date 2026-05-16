@@ -28,6 +28,7 @@ pub struct Settings {
     pub smtp_username: Option<String>,
     pub smtp_password: Option<String>,
     pub smtp_use_starttls: bool,
+    pub run_booking_reminder_cron: bool,
 }
 
 impl Settings {
@@ -107,6 +108,10 @@ impl Settings {
             .unwrap_or_else(|_| "true".to_string())
             .parse()
             .context("SMTP_USE_STARTTLS must be a valid boolean")?;
+        let run_booking_reminder_cron = std::env::var("RUN_BOOKING_REMINDER_CRON")
+            .unwrap_or_else(|_| "false".to_string())
+            .parse()
+            .context("RUN_BOOKING_REMINDER_CRON must be a valid boolean")?;
 
         Ok(Self {
             database_url,
@@ -135,6 +140,7 @@ impl Settings {
             smtp_username,
             smtp_password,
             smtp_use_starttls,
+            run_booking_reminder_cron,
         })
     }
 }

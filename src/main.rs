@@ -20,12 +20,17 @@ async fn main() -> anyhow::Result<()> {
     let pool = create_pool(&settings.database_url, settings.database_max_connections).await?;
     run_migrations(&pool).await?;
     let state = AppState::new(pool, settings.clone());
-    BookingEmailReminderService::new(
-        state.pool.clone(),
-        state.mail_service.clone(),
-        settings.app_base_url.clone(),
-    )
-    .spawn_cron();
+    if settings.run_booking_reminder_cron {
+        BookingEmailReminderService::new(
+            state.pool.clone(),
+            state.mail_service.clone(),
+            settings.app_base_url.clone(),
+        )
+        .spawn_cron();
+        tracing::info!("booking reminder cron enabled in API process");
+    } else {
+        tracing::info!("booking reminder cron disabled in API process");
+    }
     let app: Router = build_app_with_state(state);
     let addr = SocketAddr::from(([0, 0, 0, 0], settings.port));
     let listener = TcpListener::bind(addr)

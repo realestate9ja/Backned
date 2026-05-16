@@ -25,7 +25,17 @@ use crate::{
         },
     },
     interfaces::http::{errors::AppError, middleware::auth::AuthUser, state::AppState},
+    utils::pagination::{Pagination, PaginationParams},
 };
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PaginatedResponse<T> {
+    pub items: Vec<T>,
+    pub total: i64,
+    pub page: u32,
+    pub per_page: u32,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -2866,8 +2876,13 @@ pub async fn admin_metrics_overview(
 pub async fn admin_list_verifications(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
-) -> Result<Json<Vec<AdminVerificationQueueItem>>, AppError> {
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<AdminVerificationQueueItem>>, AppError> {
     ensure_admin(&user)?;
+    let pagination = Pagination::try_from(params)?;
+    let total = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM verifications")
+        .fetch_one(&state.pool)
+        .await?;
     let items = sqlx::query_as::<_, AdminVerificationQueueItem>(
         r#"
         SELECT
@@ -2926,11 +2941,19 @@ pub async fn admin_list_verifications(
             GROUP BY user_id
         ) property_counts ON property_counts.user_id = v.user_id
         ORDER BY v.created_at DESC
+        LIMIT $1 OFFSET $2
         "#,
     )
+    .bind(pagination.limit())
+    .bind(pagination.offset())
     .fetch_all(&state.pool)
     .await?;
-    Ok(Json(items))
+    Ok(Json(PaginatedResponse {
+        items,
+        total,
+        page: pagination.page(),
+        per_page: pagination.per_page(),
+    }))
 }
 
 pub async fn admin_get_verification_detail(
@@ -3613,8 +3636,13 @@ pub async fn uploads_presign(
 pub async fn list_admin_users(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
-) -> Result<Json<Value>, AppError> {
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<Value>>, AppError> {
     ensure_admin(&user)?;
+    let pagination = Pagination::try_from(params)?;
+    let total = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users")
+        .fetch_one(&state.pool)
+        .await?;
     let items = sqlx::query_scalar::<_, Value>(
         r#"
         SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb)
@@ -3632,12 +3660,22 @@ pub async fn list_admin_users(
             FROM users u
             LEFT JOIN profiles p ON p.user_id = u.id
             ORDER BY u.created_at DESC
+            LIMIT $1 OFFSET $2
         ) x
         "#,
     )
+    .bind(pagination.limit())
+    .bind(pagination.offset())
     .fetch_one(&state.pool)
     .await?;
-    Ok(Json(items))
+    let items: Vec<Value> = serde_json::from_value(items)
+        .map_err(|error| AppError::internal(error.to_string()))?;
+    Ok(Json(PaginatedResponse {
+        items,
+        total,
+        page: pagination.page(),
+        per_page: pagination.per_page(),
+    }))
 }
 
 pub async fn admin_suspend_user(
@@ -3669,8 +3707,13 @@ pub async fn admin_unsuspend_user(
 pub async fn list_admin_properties(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
-) -> Result<Json<Value>, AppError> {
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<Value>>, AppError> {
     ensure_admin(&user)?;
+    let pagination = Pagination::try_from(params)?;
+    let total = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM properties")
+        .fetch_one(&state.pool)
+        .await?;
     let items = sqlx::query_scalar::<_, Value>(
         r#"
         SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb)
@@ -3707,45 +3750,88 @@ pub async fn list_admin_properties(
                 GROUP BY property_id
             ) report_stats ON report_stats.property_id = p.id
             ORDER BY p.created_at DESC
+            LIMIT $1 OFFSET $2
         ) x
         "#,
     )
+    .bind(pagination.limit())
+    .bind(pagination.offset())
     .fetch_one(&state.pool)
     .await?;
-    Ok(Json(items))
+    let items: Vec<Value> = serde_json::from_value(items)
+        .map_err(|error| AppError::internal(error.to_string()))?;
+    Ok(Json(PaginatedResponse {
+        items,
+        total,
+        page: pagination.page(),
+        per_page: pagination.per_page(),
+    }))
 }
 
 pub async fn list_admin_transactions(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
-) -> Result<Json<Value>, AppError> {
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<Value>>, AppError> {
     ensure_admin(&user)?;
+    let pagination = Pagination::try_from(params)?;
+    let total = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM transactions")
+        .fetch_one(&state.pool)
+        .await?;
     let items = sqlx::query_scalar::<_, Value>(
-        "SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) FROM (SELECT * FROM transactions ORDER BY created_at DESC) t",
+        "SELECT COALESCE(jsonb_agg(to_jsonb(t)), '[]'::jsonb) FROM (SELECT * FROM transactions ORDER BY created_at DESC LIMIT $1 OFFSET $2) t",
     )
+    .bind(pagination.limit())
+    .bind(pagination.offset())
     .fetch_one(&state.pool)
     .await?;
-    Ok(Json(items))
+    let items: Vec<Value> = serde_json::from_value(items)
+        .map_err(|error| AppError::internal(error.to_string()))?;
+    Ok(Json(PaginatedResponse {
+        items,
+        total,
+        page: pagination.page(),
+        per_page: pagination.per_page(),
+    }))
 }
 
 pub async fn list_admin_disputes(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
-) -> Result<Json<Value>, AppError> {
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<Value>>, AppError> {
     ensure_admin(&user)?;
+    let pagination = Pagination::try_from(params)?;
+    let total = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM disputes")
+        .fetch_one(&state.pool)
+        .await?;
     let items = sqlx::query_scalar::<_, Value>(
-        "SELECT COALESCE(jsonb_agg(to_jsonb(d)), '[]'::jsonb) FROM (SELECT * FROM disputes ORDER BY created_at DESC) d",
+        "SELECT COALESCE(jsonb_agg(to_jsonb(d)), '[]'::jsonb) FROM (SELECT * FROM disputes ORDER BY created_at DESC LIMIT $1 OFFSET $2) d",
     )
+    .bind(pagination.limit())
+    .bind(pagination.offset())
     .fetch_one(&state.pool)
     .await?;
-    Ok(Json(items))
+    let items: Vec<Value> = serde_json::from_value(items)
+        .map_err(|error| AppError::internal(error.to_string()))?;
+    Ok(Json(PaginatedResponse {
+        items,
+        total,
+        page: pagination.page(),
+        per_page: pagination.per_page(),
+    }))
 }
 
 pub async fn list_admin_reports(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
-) -> Result<Json<Value>, AppError> {
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<Value>>, AppError> {
     ensure_admin(&user)?;
+    let pagination = Pagination::try_from(params)?;
+    let total = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM reports")
+        .fetch_one(&state.pool)
+        .await?;
     let items = sqlx::query_scalar::<_, Value>(
         r#"
         SELECT COALESCE(jsonb_agg(to_jsonb(r)), '[]'::jsonb)
@@ -3767,25 +3853,49 @@ pub async fn list_admin_reports(
             LEFT JOIN users owner ON owner.id = property.owner_id
             LEFT JOIN users provider ON provider.id = property.agent_id
             ORDER BY reports.created_at DESC
+            LIMIT $1 OFFSET $2
         ) r
         "#,
     )
+    .bind(pagination.limit())
+    .bind(pagination.offset())
     .fetch_one(&state.pool)
     .await?;
-    Ok(Json(items))
+    let items: Vec<Value> = serde_json::from_value(items)
+        .map_err(|error| AppError::internal(error.to_string()))?;
+    Ok(Json(PaginatedResponse {
+        items,
+        total,
+        page: pagination.page(),
+        per_page: pagination.per_page(),
+    }))
 }
 
 pub async fn list_admin_announcements(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
-) -> Result<Json<Value>, AppError> {
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<Value>>, AppError> {
     ensure_admin(&user)?;
+    let pagination = Pagination::try_from(params)?;
+    let total = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM announcements")
+        .fetch_one(&state.pool)
+        .await?;
     let items = sqlx::query_scalar::<_, Value>(
-        "SELECT COALESCE(jsonb_agg(to_jsonb(a)), '[]'::jsonb) FROM (SELECT * FROM announcements ORDER BY created_at DESC) a",
+        "SELECT COALESCE(jsonb_agg(to_jsonb(a)), '[]'::jsonb) FROM (SELECT * FROM announcements ORDER BY created_at DESC LIMIT $1 OFFSET $2) a",
     )
+    .bind(pagination.limit())
+    .bind(pagination.offset())
     .fetch_one(&state.pool)
     .await?;
-    Ok(Json(items))
+    let items: Vec<Value> = serde_json::from_value(items)
+        .map_err(|error| AppError::internal(error.to_string()))?;
+    Ok(Json(PaginatedResponse {
+        items,
+        total,
+        page: pagination.page(),
+        per_page: pagination.per_page(),
+    }))
 }
 
 pub async fn create_admin_announcement(
@@ -3858,7 +3968,13 @@ pub async fn create_admin_announcement(
 pub async fn list_notifications(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
-) -> Result<Json<Value>, AppError> {
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<Value>>, AppError> {
+    let pagination = Pagination::try_from(params)?;
+    let total = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM notifications WHERE user_id = $1")
+        .bind(user.id)
+        .fetch_one(&state.pool)
+        .await?;
     let items = sqlx::query_scalar::<_, Value>(
         r#"
         SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb)
@@ -3867,13 +3983,23 @@ pub async fn list_notifications(
             FROM notifications
             WHERE user_id = $1
             ORDER BY created_at DESC
+            LIMIT $2 OFFSET $3
         ) x
         "#,
     )
     .bind(user.id)
+    .bind(pagination.limit())
+    .bind(pagination.offset())
     .fetch_one(&state.pool)
     .await?;
-    Ok(Json(items))
+    let items: Vec<Value> = serde_json::from_value(items)
+        .map_err(|error| AppError::internal(error.to_string()))?;
+    Ok(Json(PaginatedResponse {
+        items,
+        total,
+        page: pagination.page(),
+        per_page: pagination.per_page(),
+    }))
 }
 
 pub async fn notifications_read_all(

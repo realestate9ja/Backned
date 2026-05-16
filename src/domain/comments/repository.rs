@@ -2,7 +2,9 @@ use anyhow::Result;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::domain::comments::model::{PropertyComment, CommentReply};
+use crate::domain::comments::model::{
+    CommentReply, CommentWithAuthorRow, PropertyComment, ReplyWithAuthorRow,
+};
 
 pub struct CommentRepository {
     pool: PgPool,
@@ -43,6 +45,42 @@ impl CommentRepository {
             FROM property_comments
             WHERE property_id = $1 AND deleted_at IS NULL
             ORDER BY created_at DESC
+            LIMIT $2 OFFSET $3
+            "#,
+        )
+        .bind(property_id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(comments)
+    }
+
+    pub async fn get_property_comments_with_authors(
+        &self,
+        property_id: Uuid,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<CommentWithAuthorRow>> {
+        let comments = sqlx::query_as::<_, CommentWithAuthorRow>(
+            r#"
+            SELECT
+                c.id,
+                c.property_id,
+                c.user_id,
+                c.content,
+                c.created_at,
+                c.updated_at,
+                c.deleted_at,
+                u.full_name AS author_name,
+                u.role::text AS author_role,
+                COALESCE(NULLIF(TRIM(u.wallet_address), ''), p.avatar_url) AS author_avatar
+            FROM property_comments c
+            INNER JOIN users u ON u.id = c.user_id
+            LEFT JOIN profiles p ON p.user_id = u.id
+            WHERE c.property_id = $1 AND c.deleted_at IS NULL
+            ORDER BY c.created_at DESC
             LIMIT $2 OFFSET $3
             "#,
         )
@@ -136,6 +174,41 @@ impl CommentRepository {
             "#,
         )
         .bind(comment_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(replies)
+    }
+
+    pub async fn get_replies_for_comment_ids_with_authors(
+        &self,
+        comment_ids: &[Uuid],
+    ) -> Result<Vec<ReplyWithAuthorRow>> {
+        if comment_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let replies = sqlx::query_as::<_, ReplyWithAuthorRow>(
+            r#"
+            SELECT
+                r.id,
+                r.comment_id,
+                r.user_id,
+                r.content,
+                r.created_at,
+                r.updated_at,
+                r.deleted_at,
+                u.full_name AS author_name,
+                u.role::text AS author_role,
+                COALESCE(NULLIF(TRIM(u.wallet_address), ''), p.avatar_url) AS author_avatar
+            FROM comment_replies r
+            INNER JOIN users u ON u.id = r.user_id
+            LEFT JOIN profiles p ON p.user_id = u.id
+            WHERE r.comment_id = ANY($1) AND r.deleted_at IS NULL
+            ORDER BY r.comment_id ASC, r.created_at ASC
+            "#,
+        )
+        .bind(comment_ids)
         .fetch_all(&self.pool)
         .await?;
 

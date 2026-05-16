@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::collections::HashMap;
 
 use anyhow::Result;
 use serde_json::json;
@@ -190,48 +191,57 @@ impl CommentService {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<CommentWithReplies>> {
-        let comments = self.repo.get_property_comments(property_id, limit, offset).await?;
-        let mut result = Vec::new();
+        let comments = self
+            .repo
+            .get_property_comments_with_authors(property_id, limit, offset)
+            .await?;
+        let comment_ids: Vec<Uuid> = comments.iter().map(|comment| comment.id).collect();
+        let replies = self
+            .repo
+            .get_replies_for_comment_ids_with_authors(&comment_ids)
+            .await?;
 
-        for comment in comments {
-            // Get comment author info
-            let author = self.users.find_by_id(comment.user_id).await?
-                .ok_or(anyhow::anyhow!("User not found"))?;
-            let author_role = author.role.as_str().to_string();
-            let avatar = self.user_avatar_url(comment.user_id).await?;
-
-            let comment_with_author = CommentWithAuthor {
-                comment: comment.clone(),
-                author_name: author.full_name,
-                author_role,
-                author_avatar: avatar,
-            };
-
-            // Get replies for this comment
-            let replies = self.repo.get_comment_replies(comment.id).await?;
-            let mut replies_with_authors = Vec::new();
-
-            for reply in replies {
-                let reply_author = self.users.find_by_id(reply.user_id).await?
-                    .ok_or(anyhow::anyhow!("User not found"))?;
-                let reply_author_role = reply_author.role.as_str().to_string();
-                let reply_avatar = self.user_avatar_url(reply.user_id).await?;
-
-                replies_with_authors.push(ReplyWithAuthor {
-                    reply,
-                    author_name: reply_author.full_name,
-                    author_role: reply_author_role,
-                    author_avatar: reply_avatar,
+        let mut replies_by_comment_id: HashMap<Uuid, Vec<ReplyWithAuthor>> = HashMap::new();
+        for reply in replies {
+            replies_by_comment_id
+                .entry(reply.comment_id)
+                .or_default()
+                .push(ReplyWithAuthor {
+                    reply: crate::domain::comments::CommentReply {
+                        id: reply.id,
+                        comment_id: reply.comment_id,
+                        user_id: reply.user_id,
+                        content: reply.content,
+                        created_at: reply.created_at,
+                        updated_at: reply.updated_at,
+                        deleted_at: reply.deleted_at,
+                    },
+                    author_name: reply.author_name,
+                    author_role: reply.author_role,
+                    author_avatar: reply.author_avatar,
                 });
-            }
-
-            result.push(CommentWithReplies {
-                comment: comment_with_author,
-                replies: replies_with_authors,
-            });
         }
 
-        Ok(result)
+        Ok(comments
+            .into_iter()
+            .map(|comment| CommentWithReplies {
+                comment: CommentWithAuthor {
+                    comment: crate::domain::comments::PropertyComment {
+                        id: comment.id,
+                        property_id: comment.property_id,
+                        user_id: comment.user_id,
+                        content: comment.content,
+                        created_at: comment.created_at,
+                        updated_at: comment.updated_at,
+                        deleted_at: comment.deleted_at,
+                    },
+                    author_name: comment.author_name,
+                    author_role: comment.author_role,
+                    author_avatar: comment.author_avatar,
+                },
+                replies: replies_by_comment_id.remove(&comment.id).unwrap_or_default(),
+            })
+            .collect())
     }
 
     pub async fn get_comment_count(&self, property_id: Uuid) -> Result<i64> {
