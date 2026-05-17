@@ -83,12 +83,21 @@ impl PropertyRepository {
                 agent.full_name AS agent_name,
                 p.created_at,
                 p.verified_at,
-                COALESCE(psc.view_count, 0)::bigint AS view_count,
-                COALESCE(psc.offer_count, 0)::bigint AS offer_count
+                COALESCE(view_stats.view_count, 0)::bigint AS view_count,
+                COALESCE(offer_stats.offer_count, 0)::bigint AS offer_count
             FROM properties p
             INNER JOIN users owner ON owner.id = p.owner_id
             LEFT JOIN users agent ON agent.id = p.agent_id
-            LEFT JOIN property_stats_cache psc ON p.id = psc.property_id
+            LEFT JOIN (
+                SELECT property_id, COUNT(*)::bigint AS view_count
+                FROM property_views
+                GROUP BY property_id
+            ) view_stats ON view_stats.property_id = p.id
+            LEFT JOIN (
+                SELECT property_id, COUNT(*)::bigint AS offer_count
+                FROM offers
+                GROUP BY property_id
+            ) offer_stats ON offer_stats.property_id = p.id
             WHERE p.status = 'published'
             "#,
         );
