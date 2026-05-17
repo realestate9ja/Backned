@@ -30,6 +30,7 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
+    pub read_pool: PgPool,
     pub auth_use_cases: AuthUseCases,
     pub user_use_cases: UserUseCases,
     pub property_use_cases: PropertyUseCases,
@@ -47,7 +48,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(pool: PgPool, settings: Settings) -> Self {
+    pub async fn new(pool: PgPool, read_pool: PgPool, settings: Settings) -> Self {
         let user_repository = UserRepository::new(pool.clone());
         let property_repository = PropertyRepository::new(pool.clone());
         let post_repository = PostRepository::new(pool.clone());
@@ -62,6 +63,7 @@ impl AppState {
         let password_service = PasswordService;
         let jwt_service = JwtService::new(&settings);
         let cache_service = CacheService::new(&settings.redis_url, settings.cache_ttl_seconds)
+            .await
             .expect("invalid redis config");
         let livekit_service = LiveKitService::new(
             settings.livekit_url.clone(),
@@ -72,6 +74,7 @@ impl AppState {
         let mail_service = build_mail_service(&settings).expect("invalid mail config");
         let audit_service = AuditService::new(audit_repository);
         let rate_limiter = RateLimiter::new(
+            cache_service.connection(),
             settings.auth_rate_limit_max_requests,
             settings.auth_rate_limit_window_seconds,
             settings.trust_rate_limit_max_requests,
@@ -130,6 +133,7 @@ impl AppState {
 
         Self {
             pool,
+            read_pool,
             auth_use_cases: AuthUseCases::new(auth_service),
             user_use_cases: UserUseCases::new(user_service),
             property_use_cases: PropertyUseCases::new(property_service),
@@ -145,6 +149,10 @@ impl AppState {
             admin_bootstrap_token: settings.admin_bootstrap_token,
             rate_limiter,
         }
+    }
+
+    pub fn read_pool(&self) -> &PgPool {
+        &self.read_pool
     }
 }
 

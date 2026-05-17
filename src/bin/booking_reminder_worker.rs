@@ -14,7 +14,12 @@ async fn main() -> anyhow::Result<()> {
 
     let settings = Settings::from_env()?;
     let pool = create_pool(&settings.database_url, settings.database_max_connections).await?;
-    run_migrations(&pool).await?;
+    if settings.run_migrations_on_startup {
+        run_migrations(&pool).await?;
+        tracing::info!("database migrations executed during worker startup");
+    } else {
+        tracing::info!("database migrations skipped during worker startup");
+    }
 
     let mail_service = build_mail_service(&settings)?;
     BookingEmailReminderService::new(pool, mail_service, settings.app_base_url.clone()).spawn_cron();

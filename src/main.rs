@@ -18,8 +18,18 @@ async fn main() -> anyhow::Result<()> {
 
     let settings = Settings::from_env()?;
     let pool = create_pool(&settings.database_url, settings.database_max_connections).await?;
-    run_migrations(&pool).await?;
-    let state = AppState::new(pool, settings.clone());
+    if settings.run_migrations_on_startup {
+        run_migrations(&pool).await?;
+        tracing::info!("database migrations executed during startup");
+    } else {
+        tracing::info!("database migrations skipped during startup");
+    }
+    let read_pool = if let Some(read_database_url) = &settings.read_database_url {
+        create_pool(read_database_url, settings.database_max_connections).await?
+    } else {
+        pool.clone()
+    };
+    let state = AppState::new(pool, read_pool, settings.clone()).await;
     if settings.run_booking_reminder_cron {
         BookingEmailReminderService::new(
             state.pool.clone(),

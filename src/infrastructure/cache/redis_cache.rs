@@ -4,14 +4,16 @@ use serde::{Serialize, de::DeserializeOwned};
 
 #[derive(Clone)]
 pub struct CacheService {
-    client: Client,
+    connection: ConnectionManager,
     ttl_seconds: u64,
 }
 
 impl CacheService {
-    pub fn new(redis_url: &str, ttl_seconds: u64) -> Result<Self> {
+    pub async fn new(redis_url: &str, ttl_seconds: u64) -> Result<Self> {
+        let client = Client::open(redis_url)?;
+        let connection = ConnectionManager::new(client).await?;
         Ok(Self {
-            client: Client::open(redis_url)?,
+            connection,
             ttl_seconds,
         })
     }
@@ -20,7 +22,7 @@ impl CacheService {
     where
         T: DeserializeOwned,
     {
-        let mut connection = self.connection().await?;
+        let mut connection = self.connection();
         let payload: Option<String> = connection.get(key).await?;
         match payload {
             Some(payload) => Ok(Some(serde_json::from_str(&payload)?)),
@@ -32,14 +34,14 @@ impl CacheService {
     where
         T: Serialize,
     {
-        let mut connection = self.connection().await?;
+        let mut connection = self.connection();
         let payload = serde_json::to_string(value)?;
         let _: () = connection.set_ex(key, payload, self.ttl_seconds).await?;
         Ok(())
     }
 
     pub async fn invalidate_namespace(&self, namespace: &str) -> Result<()> {
-        let mut connection = self.connection().await?;
+        let mut connection = self.connection();
         let _: i64 = connection
             .incr(self.namespace_version_key(namespace), 1)
             .await?;
@@ -48,7 +50,7 @@ impl CacheService {
 
     pub async fn versioned_key(&self, namespace: &str, suffix: &str) -> Result<String> {
         let version_key = self.namespace_version_key(namespace);
-        let mut connection = self.connection().await?;
+        let mut connection = self.connection();
         let version: Option<u64> = connection.get(&version_key).await?;
         let version = match version {
             Some(version) => version,
@@ -60,8 +62,8 @@ impl CacheService {
         Ok(format!("verinest:{namespace}:v{version}:{suffix}"))
     }
 
-    async fn connection(&self) -> Result<ConnectionManager> {
-        Ok(ConnectionManager::new(self.client.clone()).await?)
+    pub fn connection(&self) -> ConnectionManager {
+        self.connection.clone()
     }
 
     fn namespace_version_key(&self, namespace: &str) -> String {
