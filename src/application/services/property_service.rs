@@ -213,6 +213,9 @@ impl PropertyService {
             }
 
             if is_related(&detail, user) {
+                self.properties.record_view(id, Some(user.id)).await?;
+                self.cache.invalidate_namespace("properties:detail").await?;
+                self.cache.invalidate_namespace("properties:list").await?;
                 return Ok(detail);
             }
 

@@ -549,7 +549,21 @@ impl PropertyRepository {
         sqlx::query(
             r#"
             INSERT INTO property_views (id, property_id, viewer_user_id)
-            VALUES ($1, $2, $3)
+            SELECT $1, $2, $3
+            WHERE
+                $3 IS NULL
+                OR NOT EXISTS (
+                    SELECT 1
+                    FROM properties p
+                    WHERE p.id = $2
+                      AND (p.owner_id = $3 OR p.agent_id = $3)
+                )
+                OR NOT EXISTS (
+                    SELECT 1
+                    FROM property_views pv
+                    WHERE pv.property_id = $2
+                      AND pv.viewer_user_id = $3
+                )
             "#,
         )
         .bind(Uuid::new_v4())

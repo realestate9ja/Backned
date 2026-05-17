@@ -157,6 +157,15 @@ pub struct ConfirmBookingOutcomeInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CreateBookingDisputeInput {
+    pub dispute_type: String,
+    pub title: String,
+    pub description: String,
+    pub priority: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateOfferStatusInput {
     pub status: String,
 }
@@ -2616,6 +2625,150 @@ pub async fn confirm_booking_provider_outcome(
     }
 
     Ok(Json(resolve_booking_outcome_if_ready(&state.pool, id).await?))
+}
+
+pub async fn create_booking_dispute(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<CreateBookingDisputeInput>,
+) -> Result<(StatusCode, Json<Value>), AppError> {
+    if !matches!(user.role, UserRole::Seeker | UserRole::Agent | UserRole::Landlord) {
+        return Err(AppError::forbidden("only seekers and providers can raise booking disputes"));
+    }
+
+    let dispute_type = payload.dispute_type.trim().to_lowercase();
+    if !matches!(
+        dispute_type.as_str(),
+        "fraud" | "quality" | "cancellation" | "payment" | "impersonation" | "listing_misrepresentation"
+    ) {
+        return Err(AppError::bad_request("invalid dispute type"));
+    }
+
+    let priority = payload
+        .priority
+        .as_deref()
+        .unwrap_or("medium")
+        .trim()
+        .to_lowercase();
+    if !matches!(priority.as_str(), "low" | "medium" | "high" | "critical") {
+        return Err(AppError::bad_request("invalid dispute priority"));
+    }
+
+    let title = payload.title.trim();
+    let description = payload.description.trim();
+    if title.is_empty() {
+        return Err(AppError::bad_request("title is required"));
+    }
+    if description.is_empty() {
+        return Err(AppError::bad_request("description is required"));
+    }
+
+    let booking = sqlx::query(
+        r#"
+        SELECT
+            b.id,
+            b.offer_id,
+            b.property_id,
+            b.seeker_user_id,
+            b.provider_user_id,
+            b.status,
+            b.scheduled_for,
+            p.title AS property_title
+        FROM bookings b
+        INNER JOIN properties p ON p.id = b.property_id
+        WHERE b.id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::not_found("booking not found"))?;
+
+    let seeker_user_id = booking.get::<Uuid, _>("seeker_user_id");
+    let provider_user_id = booking.get::<Uuid, _>("provider_user_id");
+    let booking_status = booking.get::<String, _>("status");
+    let scheduled_for = booking.get::<DateTime<Utc>, _>("scheduled_for");
+    let property_id = booking.get::<Uuid, _>("property_id");
+    let offer_id = booking.try_get::<Option<Uuid>, _>("offer_id")?;
+    let property_title = booking.get::<String, _>("property_title");
+
+    if user.id != seeker_user_id && user.id != provider_user_id {
+        return Err(AppError::forbidden("you are not part of this booking"));
+    }
+
+    if booking_status != "confirmed" {
+        return Err(AppError::bad_request("disputes can only be raised for confirmed visits"));
+    }
+
+    if scheduled_for + chrono::Duration::hours(1) > Utc::now() {
+        return Err(AppError::bad_request(
+            "disputes can only be raised one hour after the scheduled visit time",
+        ));
+    }
+
+    let subject_user_id = if user.id == seeker_user_id {
+        provider_user_id
+    } else {
+        seeker_user_id
+    };
+
+    let dispute_id = Uuid::new_v4();
+    let reference = format!("DSP-{}", &dispute_id.to_string()[..8].to_uppercase());
+
+    sqlx::query(
+        r#"
+        INSERT INTO disputes (
+            id, reference, reporter_user_id, subject_user_id, property_id, offer_id, booking_id,
+            type, priority, status, title, description
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'open', $10, $11)
+        "#,
+    )
+    .bind(dispute_id)
+    .bind(&reference)
+    .bind(user.id)
+    .bind(subject_user_id)
+    .bind(property_id)
+    .bind(offer_id)
+    .bind(id)
+    .bind(&dispute_type)
+    .bind(&priority)
+    .bind(title)
+    .bind(description)
+    .execute(&state.pool)
+    .await?;
+
+    insert_notification(
+        &state.pool,
+        subject_user_id,
+        "booking_dispute_opened",
+        "A booking dispute was raised",
+        "A dispute has been opened on a confirmed visit involving you. Support or admin review may follow.",
+        Some(if user.id == seeker_user_id {
+            "/provider/calendar"
+        } else {
+            "/seeker/bookings"
+        }),
+        json!({
+            "disputeId": dispute_id,
+            "bookingId": id,
+            "propertyId": property_id,
+            "propertyTitle": property_title,
+            "type": dispute_type,
+            "priority": priority,
+        }),
+    )
+    .await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({
+            "id": dispute_id,
+            "reference": reference,
+            "bookingId": id,
+        })),
+    ))
 }
 
 pub async fn list_seeker_bookings(

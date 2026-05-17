@@ -307,6 +307,7 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
         .route("/bookings/{id}", patch(api_v1::update_booking))
         .route("/bookings/{id}/outcome/seeker", post(api_v1::confirm_booking_seeker_outcome))
         .route("/bookings/{id}/outcome/provider", post(api_v1::confirm_booking_provider_outcome))
+        .route("/bookings/{id}/dispute", post(api_v1::create_booking_dispute))
         .route("/seeker/bookings", get(api_v1::list_seeker_bookings))
         .route("/agent/bookings", get(api_v1::list_agent_bookings))
         .route(
