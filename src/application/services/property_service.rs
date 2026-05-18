@@ -213,12 +213,13 @@ impl PropertyService {
             }
 
             if is_related(&detail, user) {
-                self.properties.record_view(id, Some(user.id)).await?;
+                // Owner/agent viewing their own property - don't count as a view
                 self.cache.invalidate_namespace("properties:detail").await?;
                 self.cache.invalidate_namespace("properties:list").await?;
                 return Ok(detail);
             }
 
+            // Non-owner/agent viewing - count as a view
             self.properties.record_view(id, Some(user.id)).await?;
             self.cache.invalidate_namespace("properties:detail").await?;
             self.cache.invalidate_namespace("properties:list").await?;
