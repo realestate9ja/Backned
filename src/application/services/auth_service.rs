@@ -1,7 +1,8 @@
 use crate::{
     domain::users::{
         AuthResponse, BootstrapAdminInput, LoginInput, RegisterUserInput, SendEmailCodeInput,
-        UserPublicView, UserRepository, UserRole, VerifyEmailCodeInput, VerifyEmailInput,
+        SendPasswordResetInput, ResetPasswordInput, UserPublicView, UserRepository, UserRole, 
+        VerifyEmailCodeInput, VerifyEmailInput,
     },
     infrastructure::{
         auth::{JwtService, PasswordService},
@@ -235,6 +236,69 @@ impl AuthService {
             refresh_token,
             user: UserPublicView::from(user),
         })
+    }
+
+    pub async fn send_password_reset(
+        &self,
+        input: SendPasswordResetInput,
+    ) -> Result<ValueAck, AppError> {
+        validation::validate_email(&input.email)?;
+
+        let user = self
+            .users
+            .find_by_email(&input.email)
+            .await?
+            .ok_or_else(|| AppError::not_found("user with this email not found"))?;
+
+        if user.is_banned {
+            return Err(AppError::forbidden("account is banned"));
+        }
+
+        let reset_token = self.users.create_password_reset_token(user.id).await?;
+        let reset_link = format!(
+            "{}/auth/reset-password?token={}",
+            self.app_base_url.trim_end_matches('/'),
+            reset_token
+        );
+        let email = self
+            .mail_service
+            .password_reset_email(user.email.clone(), &user.full_name, &reset_link);
+        self.mail_service.send(email).await?;
+
+        Ok(ValueAck {
+            ok: true,
+            expires_in_seconds: 3600,
+            code_length: 0,
+        })
+    }
+
+    pub async fn reset_password(
+        &self,
+        input: ResetPasswordInput,
+    ) -> Result<UserPublicView, AppError> {
+        validation::validate_password(&input.password)?;
+
+        let user = self
+            .users
+            .find_by_password_reset_token(&input.token)
+            .await?
+            .ok_or_else(|| AppError::unauthorized("invalid or expired reset token"))?;
+
+        if user.is_banned {
+            return Err(AppError::forbidden("account is banned"));
+        }
+
+        let password_hash = self.password_service.hash_password(&input.password)?;
+        self.users.update_password(user.id, &password_hash).await?;
+        self.users.mark_password_reset_token_used(&input.token).await?;
+
+        let updated_user = self
+            .users
+            .find_by_id(user.id)
+            .await?
+            .ok_or_else(|| AppError::not_found("user not found"))?;
+
+        Ok(UserPublicView::from(updated_user))
     }
 }
 

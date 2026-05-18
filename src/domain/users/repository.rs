@@ -607,4 +607,80 @@ impl UserRepository {
 
         Ok(())
     }
+
+    pub async fn create_password_reset_token(&self, user_id: Uuid) -> Result<String> {
+        let token = Uuid::new_v4().to_string();
+        let expires_at = Utc::now() + Duration::hours(1);
+        sqlx::query(
+            r#"
+            INSERT INTO password_reset_tokens (id, user_id, token, expires_at)
+            VALUES ($1, $2, $3, $4)
+            "#,
+        )
+        .bind(Uuid::new_v4())
+        .bind(user_id)
+        .bind(&token)
+        .bind(expires_at)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(token)
+    }
+
+    pub async fn find_by_password_reset_token(&self, token: &str) -> Result<Option<User>> {
+        let user = sqlx::query_as::<_, User>(
+            r#"
+            SELECT u.id, u.full_name, u.email, u.email_verified, u.password_hash, u.role, u.phone, u.bio,
+                   u.notifications_enabled, u.operating_city, u.operating_state,
+                   u.verification_status, u.verification_notes, u.verified_at,
+                   u.quality_strikes, u.fraud_strikes, u.listing_restricted_until, u.is_banned,
+                   u.created_at, u.updated_at
+            FROM password_reset_tokens prt
+            JOIN users u ON u.id = prt.user_id
+            WHERE prt.token = $1
+              AND prt.used_at IS NULL
+              AND prt.expires_at > NOW()
+            ORDER BY prt.created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(token.trim())
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(user)
+    }
+
+    pub async fn mark_password_reset_token_used(&self, token: &str) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE password_reset_tokens
+            SET used_at = NOW()
+            WHERE token = $1 AND used_at IS NULL
+            "#,
+        )
+        .bind(token.trim())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn update_password(&self, user_id: Uuid, password_hash: &str) -> Result<Option<User>> {
+        sqlx::query(
+            r#"
+            UPDATE users
+            SET password_hash = $2,
+                updated_at = NOW()
+            WHERE id = $1
+            "#,
+        )
+        .bind(user_id)
+        .bind(password_hash)
+        .execute(&self.pool)
+        .await?;
+
+        self.find_by_id(user_id).await
+    }
 }
+

@@ -15,7 +15,8 @@ use uuid::Uuid;
 use crate::infrastructure::email::service::{header_asset_url, HEADER_SECURITY_DARK};
 
 use crate::{
-    domain::users::{LoginInput, RegisterUserInput, User, UserRole, VerifyEmailInput},
+    domain::users::{LoginInput, RegisterUserInput, User, UserRole, VerifyEmailInput, 
+                    SendPasswordResetInput, ResetPasswordInput},
     infrastructure::auth::PasswordService,
     interfaces::http::{errors::AppError, middleware::auth::OptionalAuthUser, state::AppState},
 };
@@ -571,6 +572,30 @@ pub async fn dispatch(
             );
             state.mail_service.send(email).await?;
             return Ok(ok(json!({"sent": true, "code_length": 5})));
+        }
+        ("POST", ["auth", "send-password-reset"]) => {
+            let _result = state
+                .auth_use_cases
+                .send_password_reset(SendPasswordResetInput {
+                    email: str_field(&body, "email")?,
+                })
+                .await?;
+            return Ok(ok(json!({
+                "ok": true,
+                "message": "Password reset email sent. Check your inbox for the link."
+            })));
+        }
+        ("POST", ["auth", "reset-password"]) => {
+            let result = state
+                .auth_use_cases
+                .reset_password(ResetPasswordInput {
+                    token: str_field(&body, "token")?,
+                    password: str_field(&body, "password")?,
+                })
+                .await?;
+            return Ok(top(
+                json!({"status": "success", "user": frontend_user_json(&state.pool, result.id).await?}),
+            ));
         }
         ("GET", ["users", "me"]) => {
             let user = require_user(user)?;

@@ -163,6 +163,74 @@ impl MailService {
         }
     }
 
+    // Helper function to build email templates without header images
+    fn build_email_template_no_header(
+        &self,
+        greeting: &str,
+        body_text: &str,
+        cta_section: Option<&str>,
+        footer_note: Option<&str>,
+    ) -> String {
+        let cta_html = cta_section.unwrap_or("");
+        let footer_text = footer_note.unwrap_or("For more information, visit your Verinest dashboard.");
+
+        format!(
+            "<!DOCTYPE html>\
+<html lang=\"en\">\
+<head>\
+<meta charset=\"UTF-8\">\
+<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\
+<meta name=\"x-apple-disable-message-reformatting\">\
+<meta name=\"color-scheme\" content=\"light only\">\
+<meta name=\"supported-color-schemes\" content=\"light only\">\
+<title>Verinest</title>\
+<!--[if mso]>\
+<style type=\"text/css\">\
+body, table, td, a, p {{ font-family: Arial, sans-serif !important; }}\
+</style>\
+<![endif]-->\
+</head>\
+<body style=\"margin:0;padding:0;background-color:#E8E2DA;background:#E8E2DA;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;\">\
+<center style=\"width:100%;background-color:#E8E2DA;background:#E8E2DA;\">\
+<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" style=\"background-color:#E8E2DA;background:#E8E2DA;mso-table-lspace:0pt;mso-table-rspace:0pt;\">\
+<tr>\
+<td align=\"center\" style=\"padding:24px 12px;\">\
+<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"560\" style=\"width:560px;max-width:560px;background-color:#FFFFFF;background:#FFFFFF;border-radius:20px;overflow:hidden;\" bgcolor=\"#FFFFFF\">\
+<tr>\
+<td style=\"padding:36px 40px 32px 40px;background-color:#FFFFFF;background:#FFFFFF;\" bgcolor=\"#FFFFFF\">\
+<p style=\"margin:0 0 14px 0;font-size:15px;line-height:1.5;font-weight:600;color:#1A1814;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">{0}</p>\
+<p style=\"margin:0 0 20px 0;font-size:13.5px;line-height:1.75;color:#5A5248;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">{1}</p>\
+{2}\
+<div style=\"height:1px;line-height:1px;font-size:1px;background:#EDE8E0;margin:28px 0;\">&nbsp;</div>\
+<p style=\"margin:0;font-size:12px;line-height:1.75;color:#9A8F84;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">{3}</p>\
+</td>\
+</tr>\
+<tr>\
+<td style=\"padding:28px 40px;background-color:#161412;background:#161412;border-top:1px solid #2A2520;\" bgcolor=\"#161412\">\
+<p style=\"margin:0 0 16px 0;font-size:11px;line-height:1.7;color:#8C8277;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">Verinest helps seekers, agents, and landlords connect through verified listings, clearer pricing, and faster rental matching across Nigeria.</p>\
+<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" style=\"margin:0 0 16px 0;\">\
+<tr>\
+<td style=\"padding:0 18px 0 0;\"><a href=\"https://verinest.ng\" style=\"font-size:10px;line-height:1.4;color:#B89E89;text-decoration:none;letter-spacing:0.06em;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">Browse Homes</a></td>\
+<td style=\"padding:0 18px 0 0;\"><a href=\"https://verinest.ng/post\" style=\"font-size:10px;line-height:1.4;color:#B89E89;text-decoration:none;letter-spacing:0.06em;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">Post a Need</a></td>\
+<td style=\"padding:0 18px 0 0;\"><a href=\"https://verinest.ng/agents\" style=\"font-size:10px;line-height:1.4;color:#B89E89;text-decoration:none;letter-spacing:0.06em;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">For Agents</a></td>\
+<td style=\"padding:0;\"><a href=\"https://verinest.ng/help\" style=\"font-size:10px;line-height:1.4;color:#B89E89;text-decoration:none;letter-spacing:0.06em;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">Help Centre</a></td>\
+</tr>\
+</table>\
+<div style=\"height:1px;line-height:1px;font-size:1px;background:#2A2520;margin:0 0 14px 0;\">&nbsp;</div>\
+<p style=\"margin:0;font-size:10px;line-height:1.6;color:#6D6157;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">© 2026 Verinest. All rights reserved. · Nigeria<br>You are receiving this because you have an account at verinest.ng</p>\
+</td>\
+</tr>\
+</table>\
+</td>\
+</tr>\
+</table>\
+</center>\
+</body>\
+</html>",
+            greeting, body_text, cta_html, footer_text,
+        )
+    }
+
     // Helper function to build refined email templates with header SVGs
     fn build_email_template(
         &self,
@@ -321,6 +389,36 @@ body, table, td, a, p {{ font-family: Arial, sans-serif !important; }}\
         }
     }
 
+    pub fn password_reset_email(
+        &self,
+        to: String,
+        full_name: &str,
+        reset_link: &str,
+    ) -> OutboundEmail {
+        let cta_html = format!(
+            r#"<div style="margin:28px 0;"><a href="{link}" style="display:inline-block;background:#C4714A;color:#FFFFFF;text-decoration:none;font-size:13px;font-weight:600;padding:15px 32px;border-radius:12px;width:100%;text-align:center;box-sizing:border-box;">Reset My Password →</a></div>"#,
+            link = reset_link
+        );
+
+        let footer_note = format!("If the button doesn't work, copy and paste this link in your browser: {}", reset_link);
+        
+        let html = self.build_email_template_no_header(
+            &format!("Hi {},", full_name),
+            "Someone requested a password reset for your Verinest account. If this was you, click the link below to create a new password. This link expires in 1 hour.",
+            Some(&cta_html),
+            Some(&footer_note),
+        );
+
+        OutboundEmail {
+            to,
+            subject: "Reset your Verinest password".to_string(),
+            text: format!(
+                "Hello {}, click this link to reset your password: {}\n\nThis link expires in 1 hour.\n\nIf you didn't request this, you can safely ignore this email.",
+                full_name, reset_link
+            ),
+            html,
+        }
+    }
 
     pub fn kyc_status_email(
         &self,

@@ -2,7 +2,7 @@ use crate::{
     application::services::{AuthService, ValueAck},
     domain::users::{
         AuthResponse, BootstrapAdminInput, LoginInput, RegisterUserInput, SendEmailCodeInput,
-        UserPublicView, VerifyEmailCodeInput, VerifyEmailInput,
+        SendPasswordResetInput, ResetPasswordInput, UserPublicView, VerifyEmailCodeInput, VerifyEmailInput,
     },
     interfaces::http::errors::AppError,
 };
@@ -53,5 +53,19 @@ impl AuthUseCases {
 
     pub async fn logout(&self, refresh_token: &str) -> Result<(), AppError> {
         self.service.logout(refresh_token).await
+    }
+
+    pub async fn send_password_reset(
+        &self,
+        input: SendPasswordResetInput,
+    ) -> Result<ValueAck, AppError> {
+        self.service.send_password_reset(input).await
+    }
+
+    pub async fn reset_password(
+        &self,
+        input: ResetPasswordInput,
+    ) -> Result<UserPublicView, AppError> {
+        self.service.reset_password(input).await
     }
 }

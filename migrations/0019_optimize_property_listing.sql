@@ -1,8 +1,8 @@
 -- Add indexes to optimize property listing query performance
--- Index on properties table for published status and creation date
+-- Index on properties table for published/rented/sold status and creation date
 CREATE INDEX IF NOT EXISTS idx_properties_status_created_at 
 ON properties(status, created_at DESC) 
-WHERE status = 'published';
+WHERE status IN ('published', 'rented_out', 'sold_out', 'in_use');
 
 -- Index on properties location for text search
 CREATE INDEX IF NOT EXISTS idx_properties_location 
@@ -11,12 +11,12 @@ ON properties(location);
 -- Index on properties price for range filtering
 CREATE INDEX IF NOT EXISTS idx_properties_price 
 ON properties(price)
-WHERE status = 'published';
+WHERE status IN ('published', 'rented_out', 'sold_out', 'in_use');
 
 -- Index on properties status for faster filtering
 CREATE INDEX IF NOT EXISTS idx_properties_status 
 ON properties(status)
-WHERE status = 'published';
+WHERE status IN ('published', 'rented_out', 'sold_out', 'in_use');
 
 -- Index on property_views for faster stats calculation
 CREATE INDEX IF NOT EXISTS idx_property_views_property_id 

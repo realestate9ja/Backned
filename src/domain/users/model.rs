@@ -159,6 +159,17 @@ pub struct VerifyEmailCodeInput {
     pub code: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SendPasswordResetInput {
+    pub email: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResetPasswordInput {
+    pub token: String,
+    pub password: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct AuthResponse {
     pub token: String,

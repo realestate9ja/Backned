@@ -98,7 +98,7 @@ impl PropertyRepository {
                 FROM offers
                 GROUP BY property_id
             ) offer_stats ON offer_stats.property_id = p.id
-            WHERE p.status = 'published'
+            WHERE p.status IN ('published', 'rented_out', 'sold_out', 'in_use')
             "#,
         );
 
@@ -170,7 +170,7 @@ impl PropertyRepository {
                 FROM offers
                 GROUP BY property_id
             ) offer_stats ON offer_stats.property_id = p.id
-            WHERE p.id = $1 AND p.status = 'published'
+            WHERE p.id = $1 AND p.status IN ('published', 'rented_out', 'sold_out', 'in_use')
             "#,
         )
         .bind(id)
