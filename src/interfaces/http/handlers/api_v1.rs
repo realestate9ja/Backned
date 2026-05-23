@@ -199,6 +199,8 @@ pub struct UpdateAgentPropertyInput {
     pub contact_name: Option<String>,
     pub contact_phone: Option<String>,
     pub listing_type: Option<String>,
+    pub status: Option<String>,
+    pub available_at: Option<String>, // ISO 8601 date string for when property becomes available again
 }
 
 #[derive(Debug, Deserialize)]
@@ -3596,6 +3598,7 @@ pub async fn update_agent_property(
             contact_name = COALESCE($9, contact_name),
             contact_phone = COALESCE($10, contact_phone),
             listing_type = COALESCE($11, listing_type),
+            status = COALESCE($12::property_status, status),
             updated_at = NOW()
         WHERE id = $1 AND (owner_id = $2 OR agent_id = $2)
         "#,
@@ -3611,11 +3614,33 @@ pub async fn update_agent_property(
     .bind(payload.contact_name)
     .bind(payload.contact_phone)
     .bind(payload.listing_type)
+    .bind(&payload.status)
     .execute(&state.pool)
     .await?;
     if updated.rows_affected() == 0 {
         return Err(AppError::not_found("property not found"));
     }
+
+    // If status is being set to rented_out and available_at is provided, record rental period
+    if let (Some(status), Some(available_at_str)) = (&payload.status, &payload.available_at) {
+        if status.to_lowercase() == "rented_out" {
+            // Parse the date string (ISO 8601 format)
+            if let Ok(available_at) = chrono::DateTime::parse_from_rfc3339(available_at_str) {
+                sqlx::query(
+                    r#"
+                    INSERT INTO property_rental_periods (id, property_id, available_at)
+                    VALUES ($1, $2, $3)
+                    "#,
+                )
+                .bind(uuid::Uuid::new_v4())
+                .bind(id)
+                .bind(available_at.with_timezone(&chrono::Utc))
+                .execute(&state.pool)
+                .await?;
+            }
+        }
+    }
+
     let detail = state.property_use_cases.get_by_id(id, Some(&user)).await?;
     Ok(Json(json!(detail)))
 }

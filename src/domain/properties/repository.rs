@@ -551,18 +551,24 @@ impl PropertyRepository {
             INSERT INTO property_views (id, property_id, viewer_user_id)
             SELECT $1, $2, $3
             WHERE
+                -- Allow anonymous views (null viewer)
                 $3 IS NULL
-                OR NOT EXISTS (
-                    SELECT 1
-                    FROM properties p
-                    WHERE p.id = $2
-                      AND (p.owner_id = $3 OR p.agent_id = $3)
-                )
-                OR NOT EXISTS (
-                    SELECT 1
-                    FROM property_views pv
-                    WHERE pv.property_id = $2
-                      AND pv.viewer_user_id = $3
+                OR (
+                    -- For authenticated users, only allow if:
+                    -- 1. They are NOT the owner or agent of this property
+                    NOT EXISTS (
+                        SELECT 1
+                        FROM properties p
+                        WHERE p.id = $2
+                          AND (p.owner_id = $3 OR p.agent_id = $3)
+                    )
+                    -- 2. AND they haven't viewed this property before
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM property_views pv
+                        WHERE pv.property_id = $2
+                          AND pv.viewer_user_id = $3
+                    )
                 )
             "#,
         )
