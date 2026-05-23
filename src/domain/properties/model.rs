@@ -85,6 +85,8 @@ pub struct PropertyListItem {
     pub agent_id: Option<Uuid>,
     pub owner_name: String,
     pub agent_name: Option<String>,
+    pub owner_phone: Option<String>,
+    pub agent_phone: Option<String>,
     pub created_at: DateTime<Utc>,
     pub verified_at: Option<DateTime<Utc>>,
     #[sqlx(default)]

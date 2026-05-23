@@ -1256,6 +1256,8 @@ pub async fn list_agent_properties(
             p.agent_id,
             owner.full_name AS owner_name,
             agent.full_name AS agent_name,
+            owner.phone AS owner_phone,
+            agent.phone AS agent_phone,
             p.created_at,
             p.verified_at,
             COALESCE(view_stats.view_count, 0) AS view_count,

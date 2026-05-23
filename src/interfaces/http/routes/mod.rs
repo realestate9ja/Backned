@@ -54,20 +54,6 @@ pub fn create_router(state: AppState) -> Router {
         )
         .route("/auth/verify-email", get(auth::verify_email))
         .route(
-            "/auth/send-password-reset",
-            post(auth::send_password_reset).route_layer(middleware::from_fn_with_state(
-                state.clone(),
-                auth_rate_limit_middleware,
-            )),
-        )
-        .route(
-            "/auth/reset-password",
-            post(auth::reset_password).route_layer(middleware::from_fn_with_state(
-                state.clone(),
-                auth_rate_limit_middleware,
-            )),
-        )
-        .route(
             "/admin/bootstrap",
             post(auth::bootstrap_admin).route_layer(middleware::from_fn_with_state(
                 state.clone(),
@@ -211,6 +197,20 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
         .route(
             "/auth/verify-email-code",
             post(api_v1::verify_email_code).route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                auth_rate_limit_middleware,
+            )),
+        )
+        .route(
+            "/auth/send-password-reset",
+            post(auth::send_password_reset).route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                auth_rate_limit_middleware,
+            )),
+        )
+        .route(
+            "/auth/reset-password",
+            post(auth::reset_password).route_layer(middleware::from_fn_with_state(
                 state.clone(),
                 auth_rate_limit_middleware,
             )),

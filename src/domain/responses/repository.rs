@@ -207,6 +207,8 @@ impl ResponseRepository {
                     agent_id: row.agent_id,
                     owner_name: row.owner_name,
                     agent_name: row.agent_name,
+                    owner_phone: None,
+                    agent_phone: None,
                     created_at: row.created_at,
                     verified_at: row.verified_at,
                     view_count: 0,
