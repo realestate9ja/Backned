@@ -23,6 +23,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS password_reset_tokens_updated_at_trigger ON password_reset_tokens;
+
 CREATE TRIGGER password_reset_tokens_updated_at_trigger
 BEFORE UPDATE ON password_reset_tokens
 FOR EACH ROW
