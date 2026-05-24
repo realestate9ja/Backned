@@ -31,9 +31,25 @@ pub async fn create_property(
 
 pub async fn list_properties(
     State(state): State<AppState>,
+    optional_user: OptionalAuthUser,
     Query(query): Query<PropertyQuery>,
 ) -> Result<Json<Vec<crate::domain::properties::PropertyListItem>>, AppError> {
-    let properties = state.property_use_cases.list(query).await?;
+    let mut properties = state.property_use_cases.list(query).await?;
+    
+    // Sanitize sensitive data based on user role
+    if let Some(user) = &optional_user.0 {
+        properties = properties
+            .into_iter()
+            .map(|p| p.sanitize_for_role(user.role, Some(user.id)))
+            .collect();
+    } else {
+        // Hide agent phone for unauthenticated users
+        properties = properties
+            .into_iter()
+            .map(|p| p.sanitize_for_role(UserRole::Seeker, None))
+            .collect();
+    }
+    
     Ok(Json(properties))
 }
 

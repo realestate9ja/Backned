@@ -148,6 +148,7 @@ impl PropertyRepository {
                 p.agent_id,
                 owner.full_name AS owner_name,
                 agent.full_name AS agent_name,
+                agent.phone AS agent_phone,
                 ap.company_name,
                 p.exact_address,
                 p.contact_name,

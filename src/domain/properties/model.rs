@@ -95,6 +95,20 @@ pub struct PropertyListItem {
     pub offer_count: i64,
 }
 
+impl PropertyListItem {
+    pub fn sanitize_for_role(mut self, role: UserRole, viewer_id: Option<Uuid>) -> Self {
+        // Hide agent phone unless viewer is the agent
+        if self.agent_id != viewer_id {
+            self.agent_phone = None;
+        }
+        // Hide details from seekers
+        if matches!(role, UserRole::Seeker) {
+            self.owner_phone = None;
+        }
+        self
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct PropertyDetail {
     pub id: Uuid,
@@ -133,6 +147,7 @@ impl PropertyDetail {
             self.exact_address = None;
             self.contact_name = None;
             self.contact_phone = None;
+            self.agent_phone = None;
         }
         self
     }
