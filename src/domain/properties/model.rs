@@ -93,6 +93,12 @@ pub struct PropertyListItem {
     pub view_count: i64,
     #[sqlx(default)]
     pub offer_count: i64,
+    #[sqlx(default)]
+    pub pending_price_request_id: Option<Uuid>,
+    #[sqlx(default)]
+    pub pending_requested_price: Option<i64>,
+    #[sqlx(default)]
+    pub pending_price_requested_at: Option<DateTime<Utc>>,
 }
 
 impl PropertyListItem {
@@ -139,6 +145,12 @@ pub struct PropertyDetail {
     pub view_count: i64,
     #[sqlx(default)]
     pub offer_count: i64,
+    #[sqlx(default)]
+    pub pending_price_request_id: Option<Uuid>,
+    #[sqlx(default)]
+    pub pending_requested_price: Option<i64>,
+    #[sqlx(default)]
+    pub pending_price_requested_at: Option<DateTime<Utc>>,
 }
 
 impl PropertyDetail {
@@ -148,6 +160,9 @@ impl PropertyDetail {
             self.contact_name = None;
             self.contact_phone = None;
             self.agent_phone = None;
+            self.pending_price_request_id = None;
+            self.pending_requested_price = None;
+            self.pending_price_requested_at = None;
         }
         self
     }

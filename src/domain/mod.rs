@@ -4,6 +4,7 @@ pub mod contact;
 pub mod notifications;
 pub mod posts;
 pub mod properties;
+pub mod disputes;
 pub mod responses;
 pub mod trust;
 pub mod users;

@@ -1,3 +1,9 @@
+// use crate::interfaces::http::handlers::disputes;
+// .route("/disputes", post(disputes::create_dispute).get(disputes::list_disputes))
+// .route("/disputes/:id", get(disputes::get_dispute))
+// .route("/disputes/:id/questions", post(disputes::add_dispute_question))
+// .route("/disputes/questions/:id/answer", post(disputes::add_dispute_answer))
+// .route("/disputes/:id/verdict", post(disputes::set_dispute_verdict))
 use crate::interfaces::http::{
     handlers::{api_v1, auth, comments, contact, health, posts, properties, trust, users, workflow},
     middleware::{
@@ -216,6 +222,7 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
             )),
         )
         .route("/auth/me", get(api_v1::me))
+        .route("/auth/legal/accept-current", patch(api_v1::accept_current_policies))
         .route("/auth/activity", get(api_v1::get_activity))
         .route(
             "/auth/refresh",
@@ -255,6 +262,7 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
             post(api_v1::create_verification_document),
         )
         .route("/uploads/presign", post(api_v1::uploads_presign))
+        .route("/legal/policies/meta", get(api_v1::get_policy_metadata_public))
         .route("/properties", get(api_v1::list_public_properties))
         .route(
             "/properties/{id}",
@@ -319,6 +327,7 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
         )
         .route("/bookings", post(api_v1::create_booking))
         .route("/bookings/{id}", patch(api_v1::update_booking))
+        .route("/bookings/{id}/confirm", post(api_v1::confirm_booking_schedule))
         .route("/bookings/{id}/outcome/seeker", post(api_v1::confirm_booking_seeker_outcome))
         .route("/bookings/{id}/outcome/provider", post(api_v1::confirm_booking_provider_outcome))
         .route("/bookings/{id}/dispute", post(api_v1::create_booking_dispute))
@@ -349,6 +358,7 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
         .route("/admin/users", get(api_v1::list_admin_users))
         .route("/admin/users/{id}/suspend", post(api_v1::admin_suspend_user))
         .route("/admin/users/{id}/unsuspend", post(api_v1::admin_unsuspend_user))
+        .route("/admin/legal/policies/meta", get(api_v1::get_admin_policy_metadata).patch(api_v1::update_admin_policy_metadata))
         .route("/admin/properties", get(api_v1::list_admin_properties))
         .route("/admin/transactions", get(api_v1::list_admin_transactions))
         .route("/admin/disputes", get(api_v1::list_admin_disputes))

@@ -86,7 +86,10 @@ impl PropertyRepository {
                 p.created_at,
                 p.verified_at,
                 COALESCE(view_stats.view_count, 0)::bigint AS view_count,
-                COALESCE(offer_stats.offer_count, 0)::bigint AS offer_count
+                COALESCE(offer_stats.offer_count, 0)::bigint AS offer_count,
+                pending_change.id AS pending_price_request_id,
+                pending_change.requested_price AS pending_requested_price,
+                pending_change.created_at AS pending_price_requested_at
             FROM properties p
             INNER JOIN users owner ON owner.id = p.owner_id
             LEFT JOIN users agent ON agent.id = p.agent_id
@@ -100,6 +103,10 @@ impl PropertyRepository {
                 FROM offers
                 GROUP BY property_id
             ) offer_stats ON offer_stats.property_id = p.id
+            LEFT JOIN property_change_requests pending_change
+                ON pending_change.property_id = p.id
+               AND pending_change.request_type = 'price_increase'
+               AND pending_change.status = 'pending'
             WHERE p.status IN ('published', 'rented_out', 'sold_out', 'in_use')
             "#,
         );
@@ -158,7 +165,10 @@ impl PropertyRepository {
                 p.created_at,
                 p.updated_at,
                 COALESCE(view_stats.view_count, 0) AS view_count,
-                COALESCE(offer_stats.offer_count, 0) AS offer_count
+                COALESCE(offer_stats.offer_count, 0) AS offer_count,
+                pending_change.id AS pending_price_request_id,
+                pending_change.requested_price AS pending_requested_price,
+                pending_change.created_at AS pending_price_requested_at
             FROM properties p
             INNER JOIN users owner ON owner.id = p.owner_id
             LEFT JOIN users agent ON agent.id = p.agent_id
@@ -173,6 +183,10 @@ impl PropertyRepository {
                 FROM offers
                 GROUP BY property_id
             ) offer_stats ON offer_stats.property_id = p.id
+            LEFT JOIN property_change_requests pending_change
+                ON pending_change.property_id = p.id
+               AND pending_change.request_type = 'price_increase'
+               AND pending_change.status = 'pending'
             WHERE p.id = $1 AND p.status IN ('published', 'rented_out', 'sold_out', 'in_use')
             "#,
         )
@@ -214,7 +228,10 @@ impl PropertyRepository {
                 p.created_at,
                 p.updated_at,
                 COALESCE(view_stats.view_count, 0) AS view_count,
-                COALESCE(offer_stats.offer_count, 0) AS offer_count
+                COALESCE(offer_stats.offer_count, 0) AS offer_count,
+                pending_change.id AS pending_price_request_id,
+                pending_change.requested_price AS pending_requested_price,
+                pending_change.created_at AS pending_price_requested_at
             FROM properties p
             INNER JOIN users owner ON owner.id = p.owner_id
             LEFT JOIN users agent ON agent.id = p.agent_id
@@ -229,6 +246,10 @@ impl PropertyRepository {
                 FROM offers
                 GROUP BY property_id
             ) offer_stats ON offer_stats.property_id = p.id
+            LEFT JOIN property_change_requests pending_change
+                ON pending_change.property_id = p.id
+               AND pending_change.request_type = 'price_increase'
+               AND pending_change.status = 'pending'
             WHERE p.id = $1
             "#,
         )

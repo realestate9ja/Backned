@@ -192,28 +192,31 @@ impl ResponseRepository {
             grouped
                 .entry(row.response_id)
                 .or_default()
-                .push(PropertyListItem {
-                    id: row.id,
-                    title: row.title,
-                    price: row.price,
-                    location: row.location,
-                    description: row.description,
-                    images: row.images,
-                    is_service_apartment: row.is_service_apartment,
-                    listing_type: row.listing_type,
-                    status: row.status,
-                    self_managed: row.self_managed,
-                    owner_id: row.owner_id,
-                    agent_id: row.agent_id,
-                    owner_name: row.owner_name,
-                    agent_name: row.agent_name,
-                    owner_phone: None,
-                    agent_phone: None,
-                    created_at: row.created_at,
-                    verified_at: row.verified_at,
-                    view_count: 0,
-                    offer_count: 0,
-                });
+                    .push(PropertyListItem {
+                        id: row.id,
+                        title: row.title,
+                        price: row.price,
+                        location: row.location,
+                        description: row.description,
+                        images: row.images,
+                        is_service_apartment: row.is_service_apartment,
+                        listing_type: row.listing_type,
+                        status: row.status,
+                        self_managed: row.self_managed,
+                        owner_id: row.owner_id,
+                        agent_id: row.agent_id,
+                        owner_name: row.owner_name,
+                        agent_name: row.agent_name,
+                        owner_phone: None,
+                        agent_phone: None,
+                        created_at: row.created_at,
+                        verified_at: row.verified_at,
+                        view_count: 0,
+                        offer_count: 0,
+                        pending_price_request_id: None,
+                        pending_requested_price: None,
+                        pending_price_requested_at: None,
+                    });
         }
 
         Ok(grouped)

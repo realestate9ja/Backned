@@ -7,11 +7,12 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::{FromRow, PgPool, Row};
+use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::infrastructure::auth::PasswordService;
 use crate::infrastructure::email::service::{
-    header_asset_url, kyc_header_asset, HEADER_LEAD_ALERT, HEADER_NEW_MATCH,
+    header_asset_url, kyc_header_asset, HEADER_LEAD_ALERT, HEADER_NEW_MATCH, HEADER_REVIEW,
     HEADER_SECURITY_DARK,
 };
 
@@ -64,6 +65,8 @@ pub struct ApiRegisterInput {
     pub password: String,
     pub phone: Option<String>,
     pub bio: Option<String>,
+    pub accepted_terms_version: String,
+    pub accepted_privacy_version: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -187,12 +190,13 @@ pub struct UploadPresignInput {
     pub content_type: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateAgentPropertyInput {
     pub title: Option<String>,
     pub description: Option<String>,
     pub price: Option<i64>,
+    pub price_change_reason: Option<String>,
     pub location: Option<String>,
     pub exact_address: Option<String>,
     pub images: Option<Vec<String>>,
@@ -200,7 +204,13 @@ pub struct UpdateAgentPropertyInput {
     pub contact_phone: Option<String>,
     pub listing_type: Option<String>,
     pub status: Option<String>,
-    pub available_at: Option<String>, // ISO 8601 date string for when property becomes available again
+    pub available_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewPropertyChangeRequestInput {
+    pub review_note: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -247,6 +257,36 @@ pub struct AuthMeResponse {
     pub verification: Option<VerificationView>,
     pub verification_documents: Vec<VerificationDocumentView>,
     pub liveness_completed: bool,
+    pub policy_metadata: PolicyMetadataView,
+    pub policy_acceptance: PolicyAcceptanceView,
+}
+
+#[derive(Debug, Serialize, FromRow, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PolicyMetadataView {
+    pub terms_version: String,
+    pub privacy_version: String,
+    pub effective_at: DateTime<Utc>,
+    pub change_summary: String,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PolicyAcceptanceView {
+    pub terms_version_accepted: Option<String>,
+    pub privacy_version_accepted: Option<String>,
+    pub accepted_at: Option<DateTime<Utc>>,
+    pub requires_reacceptance: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdatePolicyMetadataInput {
+    pub terms_version: String,
+    pub privacy_version: String,
+    pub effective_at: Option<DateTime<Utc>>,
+    pub change_summary: String,
 }
 
 #[derive(Debug, Serialize, FromRow)]
@@ -393,6 +433,8 @@ pub struct BookingView {
     pub notes: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[sqlx(default)]
+    pub confirmed_at: Option<DateTime<Utc>>,
     #[sqlx(default)]
     pub property_title: Option<String>,
     #[sqlx(default)]
@@ -588,6 +630,15 @@ pub async fn register(
     State(state): State<AppState>,
     Json(payload): Json<ApiRegisterInput>,
 ) -> Result<(StatusCode, Json<AuthResponse>), AppError> {
+    let policy_metadata = fetch_policy_metadata(&state.pool).await?;
+    if payload.accepted_terms_version.trim() != policy_metadata.terms_version
+        || payload.accepted_privacy_version.trim() != policy_metadata.privacy_version
+    {
+        return Err(AppError::bad_request(
+            "please accept the latest Terms and Privacy Policy before continuing",
+        ));
+    }
+
     let response = state
         .auth_use_cases
         .register(RegisterUserInput {
@@ -599,6 +650,15 @@ pub async fn register(
             bio: payload.bio,
         })
         .await?;
+
+    upsert_user_policy_acceptance(
+        &state.pool,
+        response.user.id,
+        &policy_metadata.terms_version,
+        &policy_metadata.privacy_version,
+    )
+    .await?;
+
     Ok((StatusCode::CREATED, Json(response)))
 }
 
@@ -640,6 +700,8 @@ pub async fn me(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
 ) -> Result<Json<AuthMeResponse>, AppError> {
+    let policy_metadata = fetch_policy_metadata(&state.pool).await?;
+    let policy_acceptance = fetch_policy_acceptance(&state.pool, user.id, &policy_metadata).await?;
     let profile = fetch_profile(&state.pool, user.id).await?;
     let role_profile = fetch_role_profile(&state.pool, &user).await?;
     let verification = fetch_latest_verification(&state.pool, user.id).await?;
@@ -666,7 +728,84 @@ pub async fn me(
         verification,
         verification_documents,
         liveness_completed,
+        policy_metadata,
+        policy_acceptance,
     }))
+}
+
+pub async fn get_policy_metadata_public(
+    State(state): State<AppState>,
+) -> Result<Json<PolicyMetadataView>, AppError> {
+    Ok(Json(fetch_policy_metadata(&state.pool).await?))
+}
+
+pub async fn accept_current_policies(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<PolicyAcceptanceView>, AppError> {
+    let policy_metadata = fetch_policy_metadata(&state.pool).await?;
+    upsert_user_policy_acceptance(
+        &state.pool,
+        user.id,
+        &policy_metadata.terms_version,
+        &policy_metadata.privacy_version,
+    )
+    .await?;
+
+    Ok(Json(fetch_policy_acceptance(&state.pool, user.id, &policy_metadata).await?))
+}
+
+pub async fn get_admin_policy_metadata(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<PolicyMetadataView>, AppError> {
+    if !user.role.can_moderate() {
+        return Err(AppError::forbidden("only admins can manage policy metadata"));
+    }
+
+    Ok(Json(fetch_policy_metadata(&state.pool).await?))
+}
+
+pub async fn update_admin_policy_metadata(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Json(payload): Json<UpdatePolicyMetadataInput>,
+) -> Result<Json<PolicyMetadataView>, AppError> {
+    if !user.role.can_moderate() {
+        return Err(AppError::forbidden("only admins can manage policy metadata"));
+    }
+
+    if payload.terms_version.trim().is_empty() || payload.privacy_version.trim().is_empty() {
+        return Err(AppError::bad_request("policy versions are required"));
+    }
+    if payload.change_summary.trim().is_empty() {
+        return Err(AppError::bad_request("change summary is required"));
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO site_policy_settings (
+            singleton, terms_version, privacy_version, effective_at, change_summary, updated_by, updated_at
+        )
+        VALUES (TRUE, $1, $2, COALESCE($3, NOW()), $4, $5, NOW())
+        ON CONFLICT (singleton) DO UPDATE
+        SET terms_version = EXCLUDED.terms_version,
+            privacy_version = EXCLUDED.privacy_version,
+            effective_at = EXCLUDED.effective_at,
+            change_summary = EXCLUDED.change_summary,
+            updated_by = EXCLUDED.updated_by,
+            updated_at = NOW()
+        "#,
+    )
+    .bind(payload.terms_version.trim())
+    .bind(payload.privacy_version.trim())
+    .bind(payload.effective_at)
+    .bind(payload.change_summary.trim())
+    .bind(user.id)
+    .execute(&state.pool)
+    .await?;
+
+    Ok(Json(fetch_policy_metadata(&state.pool).await?))
 }
 
 pub async fn get_activity(
@@ -747,6 +886,19 @@ pub async fn select_onboarding_role(
         verification,
         verification_documents,
         liveness_completed,
+        policy_metadata: PolicyMetadataView {
+            terms_version: "1.0".to_string(),
+            privacy_version: "1.0".to_string(),
+            effective_at: Utc::now(),
+            change_summary: "".to_string(),
+            updated_at: Utc::now(),
+        },
+        policy_acceptance: PolicyAcceptanceView {
+            terms_version_accepted: None,
+            privacy_version_accepted: None,
+            accepted_at: None,
+            requires_reacceptance: false,
+        },
     }))
 }
 
@@ -1026,6 +1178,19 @@ pub async fn upsert_onboarding_profile(
         verification,
         verification_documents,
         liveness_completed,
+        policy_metadata: PolicyMetadataView {
+            terms_version: "1.0".to_string(),
+            privacy_version: "1.0".to_string(),
+            effective_at: Utc::now(),
+            change_summary: "".to_string(),
+            updated_at: Utc::now(),
+        },
+        policy_acceptance: PolicyAcceptanceView {
+            terms_version_accepted: None,
+            privacy_version_accepted: None,
+            accepted_at: None,
+            requires_reacceptance: false,
+        },
     }))
 }
 
@@ -1094,6 +1259,19 @@ pub async fn update_user_avatar(
         verification,
         verification_documents,
         liveness_completed,
+        policy_metadata: PolicyMetadataView {
+            terms_version: "1.0".to_string(),
+            privacy_version: "1.0".to_string(),
+            effective_at: Utc::now(),
+            change_summary: "".to_string(),
+            updated_at: Utc::now(),
+        },
+        policy_acceptance: PolicyAcceptanceView {
+            terms_version_accepted: None,
+            privacy_version_accepted: None,
+            accepted_at: None,
+            requires_reacceptance: false,
+        },
     }))
 }
 
@@ -1263,7 +1441,10 @@ pub async fn list_agent_properties(
             p.created_at,
             p.verified_at,
             COALESCE(view_stats.view_count, 0) AS view_count,
-            COALESCE(offer_stats.offer_count, 0) AS offer_count
+            COALESCE(offer_stats.offer_count, 0) AS offer_count,
+            pending_change.id AS pending_price_request_id,
+            pending_change.requested_price AS pending_requested_price,
+            pending_change.created_at AS pending_price_requested_at
         FROM properties p
         INNER JOIN users owner ON owner.id = p.owner_id
         LEFT JOIN users agent ON agent.id = p.agent_id
@@ -1277,6 +1458,10 @@ pub async fn list_agent_properties(
             FROM offers
             GROUP BY property_id
         ) offer_stats ON offer_stats.property_id = p.id
+        LEFT JOIN property_change_requests pending_change
+            ON pending_change.property_id = p.id
+           AND pending_change.request_type = 'price_increase'
+           AND pending_change.status = 'pending'
         WHERE p.agent_id = $1 OR p.owner_id = $1
         ORDER BY p.created_at DESC
         "#,
@@ -2015,6 +2200,7 @@ pub async fn create_booking(
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING id, offer_id, property_id, unit_id, seeker_user_id, provider_user_id,
                   booking_type, scheduled_for, status, notes, created_at, updated_at,
+                  confirmed_at,
                   NULL::text AS property_title,
                   NULL::text AS property_location,
                   NULL::text AS provider_name,
@@ -2155,6 +2341,7 @@ pub async fn update_booking(
           AND (b.seeker_user_id = $5 OR b.provider_user_id = $5)
         RETURNING b.id, b.offer_id, b.property_id, b.unit_id, b.seeker_user_id, b.provider_user_id,
                   b.booking_type, b.scheduled_for, b.status, b.notes, b.created_at, b.updated_at,
+                  b.confirmed_at,
                   NULL::text AS property_title,
                   NULL::text AS property_location,
                   NULL::text AS provider_name,
@@ -2204,6 +2391,63 @@ pub async fn update_booking(
             "propertyId": booking.property_id,
             "scheduledFor": booking.scheduled_for,
             "status": booking.status
+        }),
+    )
+    .await?;
+
+    Ok(Json(booking))
+}
+
+pub async fn confirm_booking_schedule(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<BookingView>, AppError> {
+    if user.role != UserRole::Agent {
+        return Err(AppError::forbidden("only agents can confirm bookings"));
+    }
+
+    let booking = sqlx::query_as::<_, BookingView>(
+        r#"
+        UPDATE bookings b
+        SET confirmed_at = NOW(),
+            updated_at = NOW()
+        WHERE b.id = $1
+          AND b.provider_user_id = $2
+          AND b.confirmed_at IS NULL
+        RETURNING b.id, b.offer_id, b.property_id, b.unit_id, b.seeker_user_id, b.provider_user_id,
+                  b.booking_type, b.scheduled_for, b.status, b.notes, b.created_at, b.updated_at,
+                  b.confirmed_at,
+                  NULL::text AS property_title,
+                  NULL::text AS property_location,
+                  NULL::text AS provider_name,
+                  NULL::text AS seeker_name,
+                  NULL::text AS provider_phone,
+                  NULL::text AS provider_avatar_url,
+                  NULL::text AS property_listing_type,
+                  b.seeker_outcome, b.seeker_outcome_note, b.seeker_outcome_confirmed_at,
+                  b.provider_outcome, b.provider_outcome_note, b.provider_outcome_confirmed_at,
+                  b.outcome_resolution, b.outcome_follow_up_required, b.listing_outcome_applied
+        "#,
+    )
+    .bind(id)
+    .bind(user.id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::not_found("booking not found or already confirmed"))?;
+
+    // Notify seeker that agent confirmed
+    insert_notification(
+        &state.pool,
+        booking.seeker_user_id,
+        "booking_confirmed",
+        "Agent confirmed your visit",
+        &format!("Agent confirmed your scheduled visit. You can now see their contact details."),
+        Some("/seeker/bookings"),
+        json!({
+            "bookingId": booking.id,
+            "propertyId": booking.property_id,
+            "scheduledFor": booking.scheduled_for
         }),
     )
     .await?;
@@ -2472,6 +2716,7 @@ async fn resolve_booking_outcome_if_ready(
         SELECT
             b.id, b.offer_id, b.property_id, b.unit_id, b.seeker_user_id, b.provider_user_id,
             b.booking_type, b.scheduled_for, b.status, b.notes, b.created_at, b.updated_at,
+            b.confirmed_at,
             p.title AS property_title,
             p.location AS property_location,
             provider.full_name AS provider_name,
@@ -3586,45 +3831,142 @@ pub async fn update_agent_property(
             "only agents can update agent properties",
         ));
     }
-    let updated = sqlx::query(
-        r#"
-        UPDATE properties
-        SET title = COALESCE($3, title),
-            description = COALESCE($4, description),
-            price = COALESCE($5, price),
-            location = COALESCE($6, location),
-            exact_address = COALESCE($7, exact_address),
-            images = COALESCE($8, images),
-            contact_name = COALESCE($9, contact_name),
-            contact_phone = COALESCE($10, contact_phone),
-            listing_type = COALESCE($11, listing_type),
-            status = COALESCE($12::property_status, status),
-            updated_at = NOW()
-        WHERE id = $1 AND (owner_id = $2 OR agent_id = $2)
-        "#,
-    )
-    .bind(id)
-    .bind(user.id)
-    .bind(payload.title)
-    .bind(payload.description)
-    .bind(payload.price)
-    .bind(payload.location)
-    .bind(payload.exact_address)
-    .bind(payload.images)
-    .bind(payload.contact_name)
-    .bind(payload.contact_phone)
-    .bind(payload.listing_type)
-    .bind(&payload.status)
-    .execute(&state.pool)
-    .await?;
-    if updated.rows_affected() == 0 {
-        return Err(AppError::not_found("property not found"));
+    // Load current property
+    let current = state.property_use_cases.get_by_id(id, Some(&user)).await?;
+
+    // Media deletion validation
+    let old_images = &current.images;
+    let new_images = payload.images.clone().unwrap_or_else(|| old_images.clone());
+    let existing_count = old_images.len();
+    let removed_existing = old_images.iter().filter(|img| !new_images.contains(img)).count();
+    let final_count = new_images.len();
+    let max_remove = std::cmp::max(1, existing_count / 3);
+    if final_count == 0 {
+        return Err(AppError::bad_request("You must have at least one image."));
+    }
+    if removed_existing > max_remove {
+        return Err(AppError::bad_request(&format!(
+            "You can only remove up to {} of the current images in one edit.", max_remove
+        )));
+    }
+
+    // Price logic
+    let old_price = current.price;
+    let new_price = payload.price.unwrap_or(old_price);
+    let mut price_change_pending = false;
+    let mut saved_fields = vec![];
+    let mut message = String::new();
+
+    if new_price > old_price {
+        // Save all other fields except price
+        let title = payload.title.clone();
+        let description = payload.description.clone();
+        let location = payload.location.clone();
+        let exact_address = payload.exact_address.clone();
+        let contact_name = payload.contact_name.clone();
+        let contact_phone = payload.contact_phone.clone();
+        let listing_type = payload.listing_type.clone();
+        let status = payload.status.clone();
+        sqlx::query(
+            r#"
+            UPDATE properties
+            SET title = COALESCE($3, title),
+                description = COALESCE($4, description),
+                location = COALESCE($5, location),
+                exact_address = COALESCE($6, exact_address),
+                images = COALESCE($7, images),
+                contact_name = COALESCE($8, contact_name),
+                contact_phone = COALESCE($9, contact_phone),
+                listing_type = COALESCE($10, listing_type),
+                status = COALESCE($11::property_status, status),
+                updated_at = NOW()
+            WHERE id = $1 AND (owner_id = $2 OR agent_id = $2)
+            "#,
+        )
+        .bind(id)
+        .bind(user.id)
+        .bind(title)
+        .bind(description)
+        .bind(location)
+        .bind(exact_address)
+        .bind(Some(new_images.clone()))
+        .bind(contact_name)
+        .bind(contact_phone)
+        .bind(listing_type)
+        .bind(&status)
+        .execute(&state.pool)
+        .await?;
+        // Create or update pending price change request
+        let payload_json = serde_json::to_value(&payload).unwrap();
+        sqlx::query(
+            r#"
+            INSERT INTO property_change_requests (
+                id, property_id, requested_by, request_type, current_price, requested_price, status, old_value_json, new_value_json, created_at
+            ) VALUES ($1, $2, $3, 'price_increase', $4, $5, 'pending', $6, $7, NOW())
+            ON CONFLICT (property_id, request_type) WHERE status = 'pending'
+            DO UPDATE SET requested_price = $5, new_value_json = $7, created_at = NOW()
+            "#,
+        )
+        .bind(uuid::Uuid::new_v4())
+        .bind(id)
+        .bind(user.id)
+        .bind(old_price)
+        .bind(new_price)
+        .bind(serde_json::to_value(&current).unwrap())
+        .bind(payload_json)
+        .execute(&state.pool)
+        .await?;
+        price_change_pending = true;
+        message = "Your other changes were saved. Price increase is pending admin approval.".to_string();
+        saved_fields = vec!["title","description","location","exact_address","images","contact_name","contact_phone","listing_type","status"];
+    } else {
+        // Save all fields including price
+        let title = payload.title.clone();
+        let description = payload.description.clone();
+        let location = payload.location.clone();
+        let exact_address = payload.exact_address.clone();
+        let contact_name = payload.contact_name.clone();
+        let contact_phone = payload.contact_phone.clone();
+        let listing_type = payload.listing_type.clone();
+        let status = payload.status.clone();
+        sqlx::query(
+            r#"
+            UPDATE properties
+            SET title = COALESCE($3, title),
+                description = COALESCE($4, description),
+                price = COALESCE($5, price),
+                location = COALESCE($6, location),
+                exact_address = COALESCE($7, exact_address),
+                images = COALESCE($8, images),
+                contact_name = COALESCE($9, contact_name),
+                contact_phone = COALESCE($10, contact_phone),
+                listing_type = COALESCE($11, listing_type),
+                status = COALESCE($12::property_status, status),
+                updated_at = NOW()
+            WHERE id = $1 AND (owner_id = $2 OR agent_id = $2)
+            "#,
+        )
+        .bind(id)
+        .bind(user.id)
+        .bind(title)
+        .bind(description)
+        .bind(Some(new_price))
+        .bind(location)
+        .bind(exact_address)
+        .bind(Some(new_images.clone()))
+        .bind(contact_name)
+        .bind(contact_phone)
+        .bind(listing_type)
+        .bind(&status)
+        .execute(&state.pool)
+        .await?;
+        message = "Property updated successfully.".to_string();
+        saved_fields = vec!["title","description","price","location","exact_address","images","contact_name","contact_phone","listing_type","status"];
     }
 
     // If status is being set to rented_out and available_at is provided, record rental period
     if let (Some(status), Some(available_at_str)) = (&payload.status, &payload.available_at) {
         if status.to_lowercase() == "rented_out" {
-            // Parse the date string (ISO 8601 format)
             if let Ok(available_at) = chrono::DateTime::parse_from_rfc3339(available_at_str) {
                 sqlx::query(
                     r#"
@@ -3642,7 +3984,12 @@ pub async fn update_agent_property(
     }
 
     let detail = state.property_use_cases.get_by_id(id, Some(&user)).await?;
-    Ok(Json(json!(detail)))
+    Ok(Json(json!({
+        "property": detail,
+        "priceChangePending": price_change_pending,
+        "savedFields": saved_fields,
+        "message": message
+    })))
 }
 
 pub async fn list_agent_payouts(
@@ -4305,6 +4652,102 @@ async fn fetch_role_profile(pool: &PgPool, user: &User) -> Result<Option<Value>,
         UserRole::Admin => None,
     };
     Ok(value)
+}
+
+async fn fetch_policy_metadata(pool: &PgPool) -> Result<PolicyMetadataView, AppError> {
+    sqlx::query(
+        r#"
+        INSERT INTO site_policy_settings (singleton, terms_version, privacy_version, effective_at, change_summary)
+        VALUES (
+            TRUE,
+            '2026.05',
+            '2026.05',
+            NOW(),
+            'We updated our Terms and Privacy Policy. Please review the latest versions before continuing to use Verinest.'
+        )
+        ON CONFLICT (singleton) DO NOTHING
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    let metadata = sqlx::query_as::<_, PolicyMetadataView>(
+        r#"
+        SELECT terms_version, privacy_version, effective_at, change_summary, updated_at
+        FROM site_policy_settings
+        WHERE singleton = TRUE
+        "#,
+    )
+    .fetch_one(pool)
+    .await?;
+
+    Ok(metadata)
+}
+
+async fn fetch_policy_acceptance(
+    pool: &PgPool,
+    user_id: Uuid,
+    metadata: &PolicyMetadataView,
+) -> Result<PolicyAcceptanceView, AppError> {
+    let row = sqlx::query(
+        r#"
+        SELECT terms_version, privacy_version, accepted_at
+        FROM user_legal_acceptances
+        WHERE user_id = $1
+        "#,
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(row) = row {
+        let terms_version_accepted = row.try_get::<Option<String>, _>("terms_version")?;
+        let privacy_version_accepted = row.try_get::<Option<String>, _>("privacy_version")?;
+        let accepted_at = row.try_get::<Option<DateTime<Utc>>, _>("accepted_at")?;
+        let requires_reacceptance =
+            terms_version_accepted.as_deref() != Some(metadata.terms_version.as_str())
+                || privacy_version_accepted.as_deref() != Some(metadata.privacy_version.as_str());
+
+        return Ok(PolicyAcceptanceView {
+            terms_version_accepted,
+            privacy_version_accepted,
+            accepted_at,
+            requires_reacceptance,
+        });
+    }
+
+    Ok(PolicyAcceptanceView {
+        terms_version_accepted: None,
+        privacy_version_accepted: None,
+        accepted_at: None,
+        requires_reacceptance: true,
+    })
+}
+
+async fn upsert_user_policy_acceptance(
+    pool: &PgPool,
+    user_id: Uuid,
+    terms_version: &str,
+    privacy_version: &str,
+) -> Result<(), AppError> {
+    sqlx::query(
+        r#"
+        INSERT INTO user_legal_acceptances (user_id, terms_version, privacy_version, accepted_at, updated_at)
+        VALUES ($1, $2, $3, NOW(), NOW())
+        ON CONFLICT (user_id) DO UPDATE
+        SET terms_version = EXCLUDED.terms_version,
+            privacy_version = EXCLUDED.privacy_version,
+            accepted_at = NOW(),
+            updated_at = NOW()
+        "#,
+    )
+    .bind(user_id)
+    .bind(terms_version)
+    .bind(privacy_version)
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
 
 async fn fetch_latest_verification(

@@ -7,5 +7,6 @@ pub mod health;
 pub mod posts;
 pub mod properties;
 pub mod trust;
+pub mod disputes;
 pub mod users;
 pub mod workflow;
