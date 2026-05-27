@@ -89,7 +89,8 @@ impl PropertyRepository {
                 COALESCE(offer_stats.offer_count, 0)::bigint AS offer_count,
                 pending_change.id AS pending_price_request_id,
                 pending_change.requested_price AS pending_requested_price,
-                pending_change.created_at AS pending_price_requested_at
+                pending_change.created_at AS pending_price_requested_at,
+                status_lock.available_at AS status_locked_until
             FROM properties p
             INNER JOIN users owner ON owner.id = p.owner_id
             LEFT JOIN users agent ON agent.id = p.agent_id
@@ -107,6 +108,13 @@ impl PropertyRepository {
                 ON pending_change.property_id = p.id
                AND pending_change.request_type = 'price_increase'
                AND pending_change.status = 'pending'
+            LEFT JOIN LATERAL (
+                SELECT prp.available_at
+                FROM property_rental_periods prp
+                WHERE prp.property_id = p.id AND prp.available_at IS NOT NULL
+                ORDER BY prp.available_at DESC
+                LIMIT 1
+            ) status_lock ON TRUE
             WHERE p.status IN ('published', 'rented_out', 'sold_out', 'in_use')
             "#,
         );
@@ -168,7 +176,8 @@ impl PropertyRepository {
                 COALESCE(offer_stats.offer_count, 0) AS offer_count,
                 pending_change.id AS pending_price_request_id,
                 pending_change.requested_price AS pending_requested_price,
-                pending_change.created_at AS pending_price_requested_at
+                pending_change.created_at AS pending_price_requested_at,
+                status_lock.available_at AS status_locked_until
             FROM properties p
             INNER JOIN users owner ON owner.id = p.owner_id
             LEFT JOIN users agent ON agent.id = p.agent_id
@@ -187,6 +196,13 @@ impl PropertyRepository {
                 ON pending_change.property_id = p.id
                AND pending_change.request_type = 'price_increase'
                AND pending_change.status = 'pending'
+            LEFT JOIN LATERAL (
+                SELECT prp.available_at
+                FROM property_rental_periods prp
+                WHERE prp.property_id = p.id AND prp.available_at IS NOT NULL
+                ORDER BY prp.available_at DESC
+                LIMIT 1
+            ) status_lock ON TRUE
             WHERE p.id = $1 AND p.status IN ('published', 'rented_out', 'sold_out', 'in_use')
             "#,
         )
@@ -231,7 +247,8 @@ impl PropertyRepository {
                 COALESCE(offer_stats.offer_count, 0) AS offer_count,
                 pending_change.id AS pending_price_request_id,
                 pending_change.requested_price AS pending_requested_price,
-                pending_change.created_at AS pending_price_requested_at
+                pending_change.created_at AS pending_price_requested_at,
+                status_lock.available_at AS status_locked_until
             FROM properties p
             INNER JOIN users owner ON owner.id = p.owner_id
             LEFT JOIN users agent ON agent.id = p.agent_id
@@ -250,6 +267,13 @@ impl PropertyRepository {
                 ON pending_change.property_id = p.id
                AND pending_change.request_type = 'price_increase'
                AND pending_change.status = 'pending'
+            LEFT JOIN LATERAL (
+                SELECT prp.available_at
+                FROM property_rental_periods prp
+                WHERE prp.property_id = p.id AND prp.available_at IS NOT NULL
+                ORDER BY prp.available_at DESC
+                LIMIT 1
+            ) status_lock ON TRUE
             WHERE p.id = $1
             "#,
         )

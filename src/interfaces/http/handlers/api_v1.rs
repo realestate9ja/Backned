@@ -7,12 +7,11 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::{FromRow, PgPool, Row};
-use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::infrastructure::auth::PasswordService;
 use crate::infrastructure::email::service::{
-    header_asset_url, kyc_header_asset, HEADER_LEAD_ALERT, HEADER_NEW_MATCH, HEADER_REVIEW,
+    header_asset_url, kyc_header_asset, HEADER_LEAD_ALERT, HEADER_NEW_MATCH,
     HEADER_SECURITY_DARK,
 };
 
@@ -1444,7 +1443,8 @@ pub async fn list_agent_properties(
             COALESCE(offer_stats.offer_count, 0) AS offer_count,
             pending_change.id AS pending_price_request_id,
             pending_change.requested_price AS pending_requested_price,
-            pending_change.created_at AS pending_price_requested_at
+            pending_change.created_at AS pending_price_requested_at,
+            status_lock.available_at AS status_locked_until
         FROM properties p
         INNER JOIN users owner ON owner.id = p.owner_id
         LEFT JOIN users agent ON agent.id = p.agent_id
@@ -1462,6 +1462,13 @@ pub async fn list_agent_properties(
             ON pending_change.property_id = p.id
            AND pending_change.request_type = 'price_increase'
            AND pending_change.status = 'pending'
+        LEFT JOIN LATERAL (
+            SELECT prp.available_at
+            FROM property_rental_periods prp
+            WHERE prp.property_id = p.id AND prp.available_at IS NOT NULL
+            ORDER BY prp.available_at DESC
+            LIMIT 1
+        ) status_lock ON TRUE
         WHERE p.agent_id = $1 OR p.owner_id = $1
         ORDER BY p.created_at DESC
         "#,
@@ -1734,7 +1741,7 @@ pub async fn create_offer(
             &user.full_name,
             &property_title,
             &request_title,
-            "https://app.verinest.ng/seeker/offers",
+            "https://verinest.ng/seeker/offers",
             &header_image_url,
         );
         let _ = state.mail_service.send(offer_email).await;
@@ -1751,7 +1758,7 @@ pub async fn create_offer(
             "Your offer for {} on \"{}\" has been sent.",
             property_title, request_title
         ),
-        Some("/agent/leads"),
+        Some("/provider/inbox"),
         json!({
             "offerId": offer.id,
             "propertyId": payload.property_id,
@@ -1770,7 +1777,7 @@ pub async fn create_offer(
             &user.full_name,
             &property_title,
             &request_title,
-            "https://app.verinest.ng/agent/leads",
+            "https://verinest.ng/provider/inbox",
             &header_image_url,
         );
         let _ = state.mail_service.send(offer_email).await;
@@ -3833,6 +3840,58 @@ pub async fn update_agent_property(
     }
     // Load current property
     let current = state.property_use_cases.get_by_id(id, Some(&user)).await?;
+    let current_status = String::from(match current.status {
+        crate::domain::properties::PropertyStatus::Draft => "draft",
+        crate::domain::properties::PropertyStatus::PendingVerification => "pending_verification",
+        crate::domain::properties::PropertyStatus::Verified => "verified",
+        crate::domain::properties::PropertyStatus::Published => "published",
+        crate::domain::properties::PropertyStatus::Hidden => "hidden",
+        crate::domain::properties::PropertyStatus::Suspended => "suspended",
+        crate::domain::properties::PropertyStatus::RentedOut => "rented_out",
+        crate::domain::properties::PropertyStatus::SoldOut => "sold_out",
+        crate::domain::properties::PropertyStatus::InUse => "in_use",
+    });
+    let requested_status = payload
+        .status
+        .as_ref()
+        .map(|value| value.trim().to_lowercase());
+
+    if let Some(locked_until) = current.status_locked_until {
+        if locked_until > Utc::now() {
+            if let Some(next_status) = &requested_status {
+                if next_status != &current_status {
+                    return Err(AppError::bad_request(&format!(
+                        "This property is locked in its current status until {}.",
+                        locked_until.format("%d %b %Y %I:%M %p WAT")
+                    )));
+                }
+            }
+        }
+    }
+
+    let timed_statuses = ["hidden", "rented_out", "in_use"];
+    let parsed_available_at = if let Some(status) = requested_status.as_deref() {
+        if timed_statuses.contains(&status) {
+            let available_at_str = payload.available_at.as_deref().ok_or_else(|| {
+                AppError::bad_request(
+                    "Timed status changes require an availability end date.",
+                )
+            })?;
+            let available_at = chrono::DateTime::parse_from_rfc3339(available_at_str)
+                .map_err(|_| AppError::bad_request("Invalid availability date supplied."))?
+                .with_timezone(&Utc);
+            if available_at <= Utc::now() {
+                return Err(AppError::bad_request(
+                    "Availability end date must be in the future.",
+                ));
+            }
+            Some(available_at)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
     // Media deletion validation
     let old_images = &current.images;
@@ -3964,23 +4023,18 @@ pub async fn update_agent_property(
         saved_fields = vec!["title","description","price","location","exact_address","images","contact_name","contact_phone","listing_type","status"];
     }
 
-    // If status is being set to rented_out and available_at is provided, record rental period
-    if let (Some(status), Some(available_at_str)) = (&payload.status, &payload.available_at) {
-        if status.to_lowercase() == "rented_out" {
-            if let Ok(available_at) = chrono::DateTime::parse_from_rfc3339(available_at_str) {
-                sqlx::query(
-                    r#"
-                    INSERT INTO property_rental_periods (id, property_id, available_at)
-                    VALUES ($1, $2, $3)
-                    "#,
-                )
-                .bind(uuid::Uuid::new_v4())
-                .bind(id)
-                .bind(available_at.with_timezone(&chrono::Utc))
-                .execute(&state.pool)
-                .await?;
-            }
-        }
+    if let Some(available_at) = parsed_available_at {
+        sqlx::query(
+            r#"
+            INSERT INTO property_rental_periods (id, property_id, available_at)
+            VALUES ($1, $2, $3)
+            "#,
+        )
+        .bind(uuid::Uuid::new_v4())
+        .bind(id)
+        .bind(available_at)
+        .execute(&state.pool)
+        .await?;
     }
 
     let detail = state.property_use_cases.get_by_id(id, Some(&user)).await?;

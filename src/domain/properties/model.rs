@@ -99,6 +99,8 @@ pub struct PropertyListItem {
     pub pending_requested_price: Option<i64>,
     #[sqlx(default)]
     pub pending_price_requested_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub status_locked_until: Option<DateTime<Utc>>,
 }
 
 impl PropertyListItem {
@@ -151,6 +153,8 @@ pub struct PropertyDetail {
     pub pending_requested_price: Option<i64>,
     #[sqlx(default)]
     pub pending_price_requested_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub status_locked_until: Option<DateTime<Utc>>,
 }
 
 impl PropertyDetail {
@@ -163,6 +167,7 @@ impl PropertyDetail {
             self.pending_price_request_id = None;
             self.pending_requested_price = None;
             self.pending_price_requested_at = None;
+            self.status_locked_until = None;
         }
         self
     }

@@ -216,6 +216,7 @@ impl ResponseRepository {
                         pending_price_request_id: None,
                         pending_requested_price: None,
                         pending_price_requested_at: None,
+                        status_locked_until: None,
                     });
         }
 
