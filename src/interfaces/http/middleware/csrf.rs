@@ -17,6 +17,24 @@ pub async fn csrf_middleware(
         return Ok(next.run(request).await);
     }
 
+    let path = request.uri().path();
+    
+    // Skip CSRF validation for auth endpoints (they don't have CSRF tokens yet)
+    let auth_exempt_paths = [
+        "/api/v1/auth/register",
+        "/api/v1/auth/login",
+        "/api/v1/auth/verify-email",
+        "/api/v1/auth/send-email-code",
+        "/api/v1/auth/verify-email-code",
+        "/api/v1/auth/refresh",
+        "/api/v1/auth/send-password-reset",
+        "/api/v1/auth/reset-password",
+    ];
+    
+    if auth_exempt_paths.contains(&path) {
+        return Ok(next.run(request).await);
+    }
+
     // Get CSRF token from request header
     let csrf_token_header = request
         .headers()
