@@ -20,18 +20,20 @@ pub async fn csrf_middleware(
     let path = request.uri().path();
     
     // Skip CSRF validation for auth endpoints (they don't have CSRF tokens yet)
-    let auth_exempt_paths = [
-        "/api/v1/auth/register",
-        "/api/v1/auth/login",
-        "/api/v1/auth/verify-email",
-        "/api/v1/auth/send-email-code",
-        "/api/v1/auth/verify-email-code",
-        "/api/v1/auth/refresh",
-        "/api/v1/auth/send-password-reset",
-        "/api/v1/auth/reset-password",
-    ];
+    // The path here is just the route pattern (e.g., "/auth/login"), not "/api/v1/auth/login"
+    // because the middleware is applied to the nested router
+    let is_auth_exempt = path.starts_with("/auth/")
+        || path == "/auth/login"
+        || path == "/auth/register"
+        || path == "/auth/verify-email"
+        || path == "/auth/send-email-code"
+        || path == "/auth/verify-email-code"
+        || path == "/auth/refresh"
+        || path == "/auth/send-password-reset"
+        || path == "/auth/reset-password"
+        || path == "/auth/me";
     
-    if auth_exempt_paths.contains(&path) {
+    if is_auth_exempt {
         return Ok(next.run(request).await);
     }
 
