@@ -175,6 +175,7 @@ pub struct AuthResponse {
     pub token: String,
     pub refresh_token: String,
     pub user: UserPublicView,
+    pub csrf_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

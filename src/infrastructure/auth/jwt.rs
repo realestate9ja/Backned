@@ -9,6 +9,7 @@ use uuid::Uuid;
 pub struct Claims {
     pub sub: Uuid,
     pub role: String,
+    pub csrf_token: String,
     pub exp: usize,
 }
 
@@ -28,7 +29,7 @@ impl JwtService {
         }
     }
 
-    pub fn generate_token(&self, user: &User) -> anyhow::Result<String> {
+    pub fn generate_token(&self, user: &User, csrf_token: &str) -> anyhow::Result<String> {
         let expiration = Utc::now() + Duration::minutes(self.expiration_minutes);
         let claims = Claims {
             sub: user.id,
@@ -36,6 +37,7 @@ impl JwtService {
                 .context("failed to serialize role")?
                 .trim_matches('"')
                 .to_string(),
+            csrf_token: csrf_token.to_string(),
             exp: expiration.timestamp() as usize,
         };
 

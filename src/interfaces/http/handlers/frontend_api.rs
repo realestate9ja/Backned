@@ -506,13 +506,16 @@ pub async fn dispatch(
                 .user_repository
                 .mark_email_verification_token_used(&token_value)
                 .await?;
-            let token = state.jwt_service.generate_token(&updated)?;
+            
+            use crate::infrastructure::auth::CsrfService;
+            let csrf_token = CsrfService::generate_token();
+            let token = state.jwt_service.generate_token(&updated, &csrf_token)?;
             let refresh_token = state
                 .user_repository
                 .create_refresh_token(updated.id, Utc::now() + chrono::Duration::days(30))
                 .await?;
             return Ok(top(
-                json!({"status": "success", "token": token, "refresh_token": refresh_token, "user": frontend_user_json(&state.pool, updated.id).await?}),
+                json!({"status": "success", "token": token, "refresh_token": refresh_token, "csrf_token": csrf_token, "user": frontend_user_json(&state.pool, updated.id).await?}),
             ));
         }
         ("POST", ["auth", "resend-verification"]) => {

@@ -5,7 +5,7 @@ use crate::{
         VerifyEmailCodeInput, VerifyEmailInput,
     },
     infrastructure::{
-        auth::{JwtService, PasswordService},
+        auth::{JwtService, PasswordService, CsrfService},
         cache::CacheService,
         email::{MailService, service::{header_asset_url, HEADER_SECURITY_DARK, HEADER_WELCOME}},
     },
@@ -226,7 +226,8 @@ impl AuthService {
         &self,
         user: crate::domain::users::User,
     ) -> Result<AuthResponse, AppError> {
-        let token = self.jwt_service.generate_token(&user)?;
+        let csrf_token = CsrfService::generate_token();
+        let token = self.jwt_service.generate_token(&user, &csrf_token)?;
         let refresh_token = self
             .users
             .create_refresh_token(user.id, Utc::now() + Duration::days(30))
@@ -235,6 +236,7 @@ impl AuthService {
             token,
             refresh_token,
             user: UserPublicView::from(user),
+            csrf_token: Some(csrf_token),
         })
     }
 

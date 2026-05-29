@@ -11,7 +11,7 @@ use crate::{
 use axum::{
     Json,
     extract::{OriginalUri, Query, State},
-    http::StatusCode,
+    http::{StatusCode, HeaderMap, header::SET_COOKIE},
 };
 use serde_json::json;
 
@@ -19,7 +19,7 @@ pub async fn register(
     State(state): State<AppState>,
     context: RequestContext,
     Json(payload): Json<RegisterUserInput>,
-) -> Result<(StatusCode, Json<crate::domain::users::AuthResponse>), AppError> {
+) -> Result<(StatusCode, HeaderMap, Json<crate::domain::users::AuthResponse>), AppError> {
     let email = payload.email.clone();
     let role = serde_json::to_string(&payload.role)
         .map_err(anyhow::Error::from)?
@@ -50,7 +50,20 @@ pub async fn register(
         )
         .await
         .map_err(anyhow::Error::from)?;
-    Ok((StatusCode::CREATED, Json(response)))
+    
+    // Set CSRF cookie
+    let mut headers = HeaderMap::new();
+    if let Some(ref csrf_token) = response.csrf_token {
+        let csrf_cookie = format!(
+            "verinest_csrf={}; Secure; SameSite=Strict; Path=/; Max-Age=604800",
+            csrf_token
+        );
+        if let Ok(header_value) = csrf_cookie.parse() {
+            headers.insert(SET_COOKIE, header_value);
+        }
+    }
+    
+    Ok((StatusCode::CREATED, headers, Json(response)))
 }
 
 pub async fn login(
@@ -58,7 +71,7 @@ pub async fn login(
     context: RequestContext,
     OriginalUri(uri): OriginalUri,
     Json(payload): Json<LoginInput>,
-) -> Result<Json<crate::domain::users::AuthResponse>, AppError> {
+) -> Result<(HeaderMap, Json<crate::domain::users::AuthResponse>), AppError> {
     let email = payload.email.clone();
     let path = uri.path().to_string();
     match state.auth_use_cases.login(payload).await {
@@ -92,7 +105,20 @@ pub async fn login(
                 )
                 .await
                 .map_err(anyhow::Error::from)?;
-            Ok(Json(response))
+            
+            // Set CSRF and session cookies
+            let mut headers = HeaderMap::new();
+            if let Some(ref csrf_token) = response.csrf_token {
+                let csrf_cookie = format!(
+                    "verinest_csrf={}; Secure; SameSite=Strict; Path=/; Max-Age=604800",
+                    csrf_token
+                );
+                if let Ok(header_value) = csrf_cookie.parse() {
+                    headers.insert(SET_COOKIE, header_value);
+                }
+            }
+            
+            Ok((headers, Json(response)))
         }
         Err(error) => {
             state
@@ -129,7 +155,7 @@ pub async fn bootstrap_admin(
     _: AdminBootstrapToken,
     context: RequestContext,
     Json(payload): Json<BootstrapAdminInput>,
-) -> Result<(StatusCode, Json<crate::domain::users::AuthResponse>), AppError> {
+) -> Result<(StatusCode, HeaderMap, Json<crate::domain::users::AuthResponse>), AppError> {
     let email = payload.email.clone();
     let response = state.auth_use_cases.bootstrap_admin(payload).await?;
     state
@@ -148,7 +174,7 @@ pub async fn bootstrap_admin(
                 status_code: StatusCode::CREATED.as_u16(),
                 ip_address: context.ip_address,
                 user_agent: context.user_agent,
-                resource_type: Some("user".to_string()),
+                resource_type: Some("admin".to_string()),
                 resource_id: Some(response.user.id),
                 success: true,
                 metadata: json!({}),
@@ -156,7 +182,20 @@ pub async fn bootstrap_admin(
         )
         .await
         .map_err(anyhow::Error::from)?;
-    Ok((StatusCode::CREATED, Json(response)))
+    
+    // Set CSRF cookie
+    let mut headers = HeaderMap::new();
+    if let Some(ref csrf_token) = response.csrf_token {
+        let csrf_cookie = format!(
+            "verinest_csrf={}; Secure; SameSite=Strict; Path=/; Max-Age=604800",
+            csrf_token
+        );
+        if let Ok(header_value) = csrf_cookie.parse() {
+            headers.insert(SET_COOKIE, header_value);
+        }
+    }
+    
+    Ok((StatusCode::CREATED, headers, Json(response)))
 }
 
 pub async fn verify_email(

@@ -14,6 +14,7 @@ use crate::infrastructure::email::service::{
     header_asset_url, kyc_header_asset, HEADER_LEAD_ALERT, HEADER_NEW_MATCH,
     HEADER_SECURITY_DARK,
 };
+use crate::application::services::{AuditActor, AuditEvent};
 
 use crate::{
     domain::{
@@ -245,6 +246,12 @@ pub struct CreateAnnouncementInput {
     pub title: String,
     pub body: String,
     pub audience: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminDeletePropertyInput {
+    pub password: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -4352,6 +4359,74 @@ pub async fn list_admin_properties(
         page: pagination.page(),
         per_page: pagination.per_page(),
     }))
+}
+
+pub async fn delete_admin_property(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(property_id): Path<Uuid>,
+    Json(payload): Json<AdminDeletePropertyInput>,
+) -> Result<Json<Value>, AppError> {
+    ensure_admin(&user)?;
+
+    let admin = state
+        .user_repository
+        .find_by_id(user.id)
+        .await?
+        .ok_or_else(|| AppError::not_found("admin not found"))?;
+
+    let password_service = PasswordService;
+    if !password_service.verify_password(payload.password.trim(), &admin.password_hash)? {
+        return Err(AppError::forbidden("invalid password"));
+    }
+
+    let property = sqlx::query_scalar::<_, Value>(
+        r#"
+        WITH deleted AS (
+            DELETE FROM properties
+            WHERE id = $1
+            RETURNING id, title, owner_id, agent_id
+        )
+        SELECT to_jsonb(deleted)
+        FROM deleted
+        "#,
+    )
+    .bind(property_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::not_found("property not found"))?;
+
+    state
+        .audit_service
+        .record(
+            AuditActor {
+                user_id: Some(admin.id),
+                email: Some(admin.email.clone()),
+                role: Some("admin".to_string()),
+            },
+            AuditEvent {
+                request_id: Uuid::new_v4(),
+                action: "admin.delete_property".to_string(),
+                method: "DELETE".to_string(),
+                path: format!("/admin/properties/{property_id}"),
+                status_code: StatusCode::OK.as_u16(),
+                ip_address: None,
+                user_agent: None,
+                resource_type: Some("property".to_string()),
+                resource_id: Some(property_id),
+                success: true,
+                metadata: json!({
+                    "property": property,
+                }),
+            },
+        )
+        .await
+        .map_err(anyhow::Error::from)?;
+
+    Ok(Json(json!({
+        "success": true,
+        "message": "Property deleted successfully"
+    })))
 }
 
 pub async fn list_admin_transactions(

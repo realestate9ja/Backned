@@ -8,6 +8,7 @@ use crate::interfaces::http::{
     handlers::{api_v1, auth, comments, contact, health, posts, properties, trust, users, workflow},
     middleware::{
         audit::{audit_middleware, request_context_middleware},
+        csrf::csrf_middleware,
         rate_limit::{auth_rate_limit_middleware, trust_rate_limit_middleware},
     },
     state::AppState,
@@ -16,16 +17,23 @@ use axum::{
     Router,
     http::{Method, header},
     middleware,
-    routing::{get, patch, post},
+    routing::{delete, get, patch, post},
 };
 use tower_http::{
-    cors::{AllowOrigin, CorsLayer},
+    cors::CorsLayer,
     trace::TraceLayer,
 };
 
 pub fn create_router(state: AppState) -> Router {
     let cors = CorsLayer::new()
-        .allow_origin(AllowOrigin::mirror_request())
+        .allow_origin([
+            "http://localhost:3001".parse().unwrap(),
+            "http://localhost:8080".parse().unwrap(),
+            "https://verinestdemo.vercel.app".parse().unwrap(),
+            "https://verinest.ng".parse().unwrap(),
+            "https://www.verinest.ng".parse().unwrap(),
+            "https://verinest.vercel.app".parse().unwrap(),
+        ])
         .allow_methods([
             Method::GET,
             Method::POST,
@@ -40,6 +48,7 @@ pub fn create_router(state: AppState) -> Router {
             header::ACCEPT,
             header::ORIGIN,
             header::HeaderName::from_static("x-requested-with"),
+            header::HeaderName::from_static("x-csrf-token"),
         ])
         .allow_credentials(true);
     Router::new()
@@ -360,6 +369,7 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
         .route("/admin/users/{id}/unsuspend", post(api_v1::admin_unsuspend_user))
         .route("/admin/legal/policies/meta", get(api_v1::get_admin_policy_metadata).patch(api_v1::update_admin_policy_metadata))
         .route("/admin/properties", get(api_v1::list_admin_properties))
+        .route("/admin/properties/{id}", delete(api_v1::delete_admin_property))
         .route("/admin/transactions", get(api_v1::list_admin_transactions))
         .route("/admin/disputes", get(api_v1::list_admin_disputes))
         .route("/admin/reports", get(api_v1::list_admin_reports))
@@ -392,5 +402,6 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
             "/notifications/{id}",
             axum::routing::delete(api_v1::notification_delete),
         )
+        .layer(middleware::from_fn(csrf_middleware))
         .with_state(state)
 }

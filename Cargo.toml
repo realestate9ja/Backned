@@ -19,6 +19,7 @@ reqwest = { version = "0.12.15", default-features = false, features = ["json", "
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 sqlx = { version = "0.8.3", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono"] }
+subtle = "2.4"
 tokio = { version = "1.44.1", features = ["full"] }
 tower = { version = "0.5.2", features = ["util"] }
 tower-http = { version = "0.6.2", features = ["trace", "cors"] }
