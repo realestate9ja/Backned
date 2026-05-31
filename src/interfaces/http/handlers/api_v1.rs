@@ -391,6 +391,12 @@ pub struct AgentLeadView {
     pub location: String,
     pub property_type: String,
     pub urgency: Option<String>,
+    #[sqlx(default)]
+    pub min_budget: Option<i64>,
+    #[sqlx(default)]
+    pub max_budget: Option<i64>,
+    #[sqlx(default)]
+    pub pricing_preference: Option<String>,
 }
 
 #[derive(Debug, Serialize, FromRow)]
@@ -1620,7 +1626,10 @@ pub async fn list_agent_leads(
             p.request_title,
             p.location,
             p.property_type,
-            NULL::text AS urgency
+            NULL::text AS urgency,
+            p.min_budget,
+            p.max_budget,
+            p.pricing_preference
         FROM agent_post_notifications apn
         INNER JOIN posts p ON p.id = apn.post_id
         LEFT JOIN lead_matches lm ON lm.agent_user_id = apn.agent_id AND lm.need_post_id = apn.post_id
