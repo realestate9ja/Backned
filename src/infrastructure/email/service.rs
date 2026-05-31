@@ -737,6 +737,83 @@ body, table, td, a, p {{ font-family: Arial, sans-serif !important; }}\
         }
     }
 
+    pub fn need_alert_email(
+        &self,
+        to: String,
+        full_name: &str,
+        request_title: &str,
+        area: &str,
+        city: &str,
+        state: &str,
+        property_type: &str,
+        min_budget: i64,
+        max_budget: i64,
+        action_url: &str,
+        header_image_url: &str,
+    ) -> OutboundEmail {
+        let budget = format!("NGN {} - NGN {}", min_budget, max_budget);
+        let summary = format!(
+            "<div style=\"background:#FAF7F3;border-radius:16px;padding:18px;border:1px solid #EDE8E0;margin:20px 0;\"><div style=\"font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:#9A8F84;margin-bottom:10px;\">Need details</div><div style=\"font-size:16px;font-weight:600;color:#1A1814;margin-bottom:8px;\">{request_title}</div><div style=\"font-size:12px;color:#5A5248;line-height:1.8;\"><div><strong>Area:</strong> {area}</div><div><strong>City/State:</strong> {city}, {state}</div><div><strong>Type:</strong> {property_type}</div><div><strong>Budget:</strong> {budget}</div></div></div>"
+        );
+        let cta_html = format!(
+            r#"<div style="margin:28px 0;"><a href="{url}" style="display:inline-block;background:#C4714A;color:#FFFFFF;text-decoration:none;font-size:13px;font-weight:600;padding:15px 32px;border-radius:12px;width:100%;text-align:center;box-sizing:border-box;">Open Provider Inbox →</a></div>"#,
+            url = action_url
+        );
+        let html = self.build_email_template(
+            header_image_url,
+            &format!("Hi {},", full_name),
+            "A seeker has posted a new need that matches your state. Review it early to respond before other providers.",
+            Some(&format!("{summary}{cta_html}")),
+            Some("Respond inside Verinest so the seeker can review your property and contact details in one place."),
+        );
+
+        OutboundEmail {
+            to,
+            subject: format!("New seeker need in {} — {}", state, request_title),
+            text: format!(
+                "Hi {}, a new seeker need titled \"{}\" was posted for {}, {}. Type: {}. Budget: {}. Open: {}",
+                full_name, request_title, city, state, property_type, budget, action_url
+            ),
+            html,
+        }
+    }
+
+    pub fn need_response_email(
+        &self,
+        to: String,
+        full_name: &str,
+        responder_name: &str,
+        request_title: &str,
+        response_message: &str,
+        action_url: &str,
+        header_image_url: &str,
+    ) -> OutboundEmail {
+        let response_block = format!(
+            "<div style=\"background:#FAF7F3;border-radius:16px;padding:18px;border:1px solid #EDE8E0;margin:20px 0;\"><div style=\"font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:#9A8F84;margin-bottom:10px;\">Response</div><div style=\"font-size:16px;font-weight:600;color:#1A1814;margin-bottom:8px;\">{responder_name}</div><div style=\"font-size:13px;color:#5A5248;line-height:1.8;white-space:pre-wrap;\">{response_message}</div></div>"
+        );
+        let cta_html = format!(
+            r#"<div style="margin:28px 0;"><a href="{url}" style="display:inline-block;background:#C4714A;color:#FFFFFF;text-decoration:none;font-size:13px;font-weight:600;padding:15px 32px;border-radius:12px;width:100%;text-align:center;box-sizing:border-box;">View My Need →</a></div>"#,
+            url = action_url
+        );
+        let html = self.build_email_template(
+            header_image_url,
+            &format!("Hi {},", full_name),
+            &format!("An agent has responded to your need titled \"{request_title}\"."),
+            Some(&format!("{response_block}{cta_html}")),
+            Some("Open Verinest to compare the response with your original need and continue the conversation."),
+        );
+
+        OutboundEmail {
+            to,
+            subject: format!("New response for your need — {}", request_title),
+            text: format!(
+                "Hi {}, {} responded to your need \"{}\". Response: {}. Open: {}",
+                full_name, responder_name, request_title, response_message, action_url
+            ),
+            html,
+        }
+    }
+
     pub fn property_moderation_email(
         &self,
         to: String,

@@ -6,7 +6,11 @@ use crate::{
         responses::{CreateResponseInput, ResponseCreated, ResponseRepository},
         users::{User, UserRepository},
     },
-    infrastructure::cache::CacheService,
+    infrastructure::{
+        cache::CacheService,
+        email::service::{header_asset_url, HEADER_LEAD_ALERT, HEADER_NEW_MATCH},
+        email::MailService,
+    },
     interfaces::http::errors::AppError,
     utils::{pagination::Pagination, validation},
 };
@@ -20,6 +24,7 @@ pub struct PostService {
     properties: PropertyRepository,
     notifications: NotificationRepository,
     cache: CacheService,
+    mail_service: MailService,
 }
 
 impl PostService {
@@ -30,6 +35,7 @@ impl PostService {
         properties: PropertyRepository,
         notifications: NotificationRepository,
         cache: CacheService,
+        mail_service: MailService,
     ) -> Self {
         Self {
             posts,
@@ -38,6 +44,7 @@ impl PostService {
             properties,
             notifications,
             cache,
+            mail_service,
         }
     }
 
@@ -121,6 +128,29 @@ impl PostService {
         self.notifications
             .create_for_post(post.id, &recipients)
             .await?;
+
+        let header_image_url = header_asset_url(HEADER_LEAD_ALERT);
+        for recipient in &recipients {
+            if let Some(agent) = self.users.find_by_id(recipient.agent_id).await? {
+                if !agent.notifications_enabled {
+                    continue;
+                }
+                let email = self.mail_service.need_alert_email(
+                    agent.email,
+                    &agent.full_name,
+                    &input.request_title,
+                    &input.area,
+                    &input.city,
+                    &input.state,
+                    &input.property_type,
+                    input.min_budget,
+                    input.max_budget,
+                    "https://verinest.ng/provider/inbox",
+                    &header_image_url,
+                );
+                let _ = self.mail_service.send(email).await;
+            }
+        }
         self.cache.invalidate_namespace("posts:list").await?;
         Ok(post.id)
     }
@@ -197,6 +227,24 @@ impl PostService {
         }
 
         let response = self.responses.create(post_id, actor.id, &input).await?;
+
+        if let Some(post) = self.posts.find_by_id(post_id).await? {
+            if let Some(seeker) = self.users.find_by_id(post.author_id).await? {
+                if seeker.email_verified {
+                    let response_email = self.mail_service.need_response_email(
+                        seeker.email,
+                        &seeker.full_name,
+                        &actor.full_name,
+                        &post.request_title,
+                        &input.message,
+                        "https://verinest.ng/seeker/offers",
+                        &header_asset_url(HEADER_NEW_MATCH),
+                    );
+                    let _ = self.mail_service.send(response_email).await;
+                }
+            }
+        }
+
         self.cache.invalidate_namespace("posts:list").await?;
         Ok(response)
     }

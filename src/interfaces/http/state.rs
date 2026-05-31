@@ -113,6 +113,7 @@ impl AppState {
             property_repository.clone(),
             notification_repository,
             cache_service.clone(),
+            mail_service.clone(),
         );
         let workflow_service = WorkflowService::new(
             workflow_repository.clone(),

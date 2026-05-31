@@ -1691,6 +1691,28 @@ pub async fn create_offer(
         .await?
         .ok_or_else(|| AppError::not_found("need post not found"))?;
 
+    let resolved_lead_match_id = payload.lead_match_id.unwrap_or_else(Uuid::new_v4);
+    if user.role == UserRole::Agent || payload.lead_match_id.is_some() {
+        sqlx::query(
+            r#"
+            INSERT INTO lead_matches (
+                id, agent_user_id, need_post_id, matched_property_id, match_score, status, created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, 100, 'responded', NOW(), NOW())
+            ON CONFLICT (id) DO UPDATE SET
+                matched_property_id = EXCLUDED.matched_property_id,
+                status = 'responded',
+                updated_at = NOW()
+            "#,
+        )
+        .bind(resolved_lead_match_id)
+        .bind(user.id)
+        .bind(payload.need_post_id)
+        .bind(payload.property_id)
+        .execute(&state.pool)
+        .await?;
+    }
+
     let offer = sqlx::query_as::<_, OfferView>(
         r#"
         INSERT INTO offers (
@@ -1710,7 +1732,7 @@ pub async fn create_offer(
     .bind(user.id)
     .bind(user.role.as_str())
     .bind(payload.property_id)
-    .bind(payload.lead_match_id)
+    .bind(payload.lead_match_id.or(Some(resolved_lead_match_id)))
     .bind(payload.offer_price_amount)
     .bind(payload.offer_price_currency)
     .bind(payload.offer_price_period)
@@ -1720,41 +1742,6 @@ pub async fn create_offer(
     .bind(payload.priority_send)
     .fetch_one(&state.pool)
     .await?;
-
-    if user.role == UserRole::Agent {
-        let updated = sqlx::query(
-            r#"
-            UPDATE lead_matches
-            SET matched_property_id = $3,
-                status = 'responded',
-                updated_at = NOW()
-            WHERE agent_user_id = $1
-              AND need_post_id = $2
-            "#,
-        )
-        .bind(user.id)
-        .bind(payload.need_post_id)
-        .bind(payload.property_id)
-        .execute(&state.pool)
-        .await?;
-
-        if updated.rows_affected() == 0 {
-            sqlx::query(
-                r#"
-                INSERT INTO lead_matches (
-                    id, agent_user_id, need_post_id, matched_property_id, match_score, status, created_at, updated_at
-                )
-                VALUES ($1, $2, $3, $4, 100, 'responded', NOW(), NOW())
-                "#,
-            )
-            .bind(payload.lead_match_id.unwrap_or_else(Uuid::new_v4))
-            .bind(user.id)
-            .bind(payload.need_post_id)
-            .bind(payload.property_id)
-            .execute(&state.pool)
-            .await?;
-        }
-    }
 
     // Fetch seeker and agent/landlord details for email
     let seeker = sqlx::query_as::<_, (String, String)>("SELECT email, full_name FROM users WHERE id = $1")
