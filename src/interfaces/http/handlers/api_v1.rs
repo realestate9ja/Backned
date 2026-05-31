@@ -3342,11 +3342,11 @@ pub async fn admin_need_analytics(
         .fetch_one(read_pool)
         .await?;
     let answered_needs = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(DISTINCT post_id) FROM responses WHERE post_id IS NOT NULL",
+        "SELECT COUNT(DISTINCT need_post_id) FROM offers WHERE need_post_id IS NOT NULL",
     )
     .fetch_one(read_pool)
     .await?;
-    let response_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM responses")
+    let response_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM offers")
         .fetch_one(read_pool)
         .await?;
     let open_needs = total_needs.saturating_sub(answered_needs);
@@ -3370,9 +3370,9 @@ pub async fn admin_need_analytics(
             GROUP BY 1
         ),
         answers AS (
-            SELECT date_trunc('month', created_at) AS month_start, COUNT(DISTINCT post_id)::bigint AS needs_answered
-            FROM responses
-            WHERE post_id IS NOT NULL
+            SELECT date_trunc('month', created_at) AS month_start, COUNT(DISTINCT need_post_id)::bigint AS needs_answered
+            FROM offers
+            WHERE need_post_id IS NOT NULL
             GROUP BY 1
         )
         SELECT COALESCE(
