@@ -1,7 +1,7 @@
 use axum::{
     Json,
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{StatusCode, HeaderMap, header::SET_COOKIE},
 };
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
@@ -246,6 +246,21 @@ pub struct CreateAnnouncementInput {
     pub title: String,
     pub body: String,
     pub audience: String,
+}
+
+#[derive(Debug, Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct AnnouncementView {
+    pub id: Uuid,
+    pub title: String,
+    pub body: String,
+    pub audience: String,
+    pub status: String,
+    pub published_at: Option<DateTime<Utc>>,
+    pub created_by: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub created_by_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -583,6 +598,25 @@ pub struct AdminOverviewMetrics {
     pub open_disputes: i64,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminNeedTrendPoint {
+    pub month: String,
+    pub needs_created: i64,
+    pub needs_answered: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminNeedAnalytics {
+    pub total_needs: i64,
+    pub answered_needs: i64,
+    pub open_needs: i64,
+    pub response_count: i64,
+    pub answer_rate: f64,
+    pub monthly_trend: Vec<AdminNeedTrendPoint>,
+}
+
 #[derive(Debug, Serialize, FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct AdminVerificationQueueItem {
@@ -635,7 +669,7 @@ async fn insert_notification(
 pub async fn register(
     State(state): State<AppState>,
     Json(payload): Json<ApiRegisterInput>,
-) -> Result<(StatusCode, Json<AuthResponse>), AppError> {
+) -> Result<(StatusCode, HeaderMap, Json<AuthResponse>), AppError> {
     let policy_metadata = fetch_policy_metadata(&state.pool).await?;
     if payload.accepted_terms_version.trim() != policy_metadata.terms_version
         || payload.accepted_privacy_version.trim() != policy_metadata.privacy_version
@@ -665,7 +699,19 @@ pub async fn register(
     )
     .await?;
 
-    Ok((StatusCode::CREATED, Json(response)))
+    // Set CSRF cookie
+    let mut headers = HeaderMap::new();
+    if let Some(ref csrf_token) = response.csrf_token {
+        let csrf_cookie = format!(
+            "verinest_csrf={}; Secure; SameSite=Strict; Path=/; Max-Age=604800",
+            csrf_token
+        );
+        if let Ok(header_value) = csrf_cookie.parse() {
+            headers.insert(SET_COOKIE, header_value);
+        }
+    }
+
+    Ok((StatusCode::CREATED, headers, Json(response)))
 }
 
 pub async fn send_email_code(
@@ -3290,6 +3336,80 @@ pub async fn admin_metrics_overview(
     }))
 }
 
+pub async fn admin_need_analytics(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+) -> Result<Json<AdminNeedAnalytics>, AppError> {
+    ensure_admin(&user)?;
+    let read_pool = state.read_pool();
+    let total_needs = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM posts")
+        .fetch_one(read_pool)
+        .await?;
+    let answered_needs = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(DISTINCT post_id) FROM responses WHERE post_id IS NOT NULL",
+    )
+    .fetch_one(read_pool)
+    .await?;
+    let response_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM responses")
+        .fetch_one(read_pool)
+        .await?;
+    let open_needs = total_needs.saturating_sub(answered_needs);
+    let answer_rate = if total_needs > 0 {
+        (answered_needs as f64 / total_needs as f64) * 100.0
+    } else {
+        0.0
+    };
+    let monthly_trend = sqlx::query_scalar::<_, Value>(
+        r#"
+        WITH months AS (
+            SELECT generate_series(
+                date_trunc('month', NOW()) - interval '7 months',
+                date_trunc('month', NOW()),
+                interval '1 month'
+            ) AS month_start
+        ),
+        needs AS (
+            SELECT date_trunc('month', created_at) AS month_start, COUNT(*)::bigint AS needs_created
+            FROM posts
+            GROUP BY 1
+        ),
+        answers AS (
+            SELECT date_trunc('month', created_at) AS month_start, COUNT(DISTINCT post_id)::bigint AS needs_answered
+            FROM responses
+            WHERE post_id IS NOT NULL
+            GROUP BY 1
+        )
+        SELECT COALESCE(
+            jsonb_agg(
+                jsonb_build_object(
+                    'month', to_char(months.month_start, 'Mon'),
+                    'needsCreated', COALESCE(needs.needs_created, 0),
+                    'needsAnswered', COALESCE(answers.needs_answered, 0)
+                )
+                ORDER BY months.month_start
+            ),
+            '[]'::jsonb
+        )
+        FROM months
+        LEFT JOIN needs ON needs.month_start = months.month_start
+        LEFT JOIN answers ON answers.month_start = months.month_start
+        "#,
+    )
+    .fetch_one(read_pool)
+    .await?;
+    let monthly_trend: Vec<AdminNeedTrendPoint> = serde_json::from_value(monthly_trend)
+        .map_err(|error| AppError::internal(error.to_string()))?;
+
+    Ok(Json(AdminNeedAnalytics {
+        total_needs,
+        answered_needs,
+        open_needs,
+        response_count,
+        answer_rate,
+        monthly_trend,
+    }))
+}
+
 pub async fn admin_list_verifications(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
@@ -4585,6 +4705,83 @@ pub async fn list_admin_announcements(
     }))
 }
 
+pub async fn list_public_announcements(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<PaginatedResponse<Value>>, AppError> {
+    let read_pool = state.read_pool();
+    let pagination = Pagination::try_from(params)?;
+    let allowed_audiences = announcement_audiences_for_role(user.role);
+    let total = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM announcements WHERE status = 'published' AND audience = ANY($1)",
+    )
+    .bind(&allowed_audiences)
+    .fetch_one(read_pool)
+    .await?;
+    let items = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT COALESCE(jsonb_agg(to_jsonb(a)), '[]'::jsonb)
+        FROM (
+            SELECT
+                announcements.*,
+                creator.full_name AS created_by_name,
+                creator.role::text AS created_by_role
+            FROM announcements
+            LEFT JOIN users creator ON creator.id = announcements.created_by
+            WHERE announcements.status = 'published'
+              AND announcements.audience = ANY($1)
+            ORDER BY announcements.published_at DESC NULLS LAST, announcements.created_at DESC
+            LIMIT $2 OFFSET $3
+        ) a
+        "#,
+    )
+    .bind(&allowed_audiences)
+    .bind(pagination.limit())
+    .bind(pagination.offset())
+    .fetch_one(read_pool)
+    .await?;
+    let items: Vec<Value> = serde_json::from_value(items)
+        .map_err(|error| AppError::internal(error.to_string()))?;
+    Ok(Json(PaginatedResponse {
+        items,
+        total,
+        page: pagination.page(),
+        per_page: pagination.per_page(),
+    }))
+}
+
+pub async fn get_public_announcement(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>, AppError> {
+    let allowed_audiences = announcement_audiences_for_role(user.role);
+    let item = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT to_jsonb(a)
+        FROM (
+            SELECT
+                announcements.*,
+                creator.full_name AS created_by_name,
+                creator.role::text AS created_by_role
+            FROM announcements
+            LEFT JOIN users creator ON creator.id = announcements.created_by
+            WHERE announcements.id = $1
+              AND announcements.status = 'published'
+              AND announcements.audience = ANY($2)
+        ) a
+        "#,
+    )
+    .bind(id)
+    .bind(&allowed_audiences)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::not_found("announcement not found"))?;
+
+    Ok(Json(item))
+}
+
 pub async fn create_admin_announcement(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
@@ -4608,6 +4805,11 @@ pub async fn create_admin_announcement(
     .bind(user.id)
     .fetch_one(&state.pool)
     .await?;
+    let announcement_id = item
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
 
     let target_roles: Option<Vec<&'static str>> =
         match payload.audience.trim().to_lowercase().as_str() {
@@ -4618,6 +4820,11 @@ pub async fn create_admin_announcement(
             "landlords" | "landlords only" => Some(vec!["landlord"]),
             _ => None,
         };
+    let announcement_action_url = if announcement_id.is_empty() {
+        "/announcements".to_string()
+    } else {
+        format!("/announcements/{announcement_id}")
+    };
 
     let recipients = if let Some(roles) = target_roles {
         sqlx::query_scalar::<_, Uuid>("SELECT id FROM users WHERE role::text = ANY($1)")
@@ -4637,7 +4844,7 @@ pub async fn create_admin_announcement(
             "announcement",
             &payload.title,
             &payload.body,
-            Some("/admin/announcements"),
+            Some(announcement_action_url.as_str()),
             json!({
                 "audience": payload.audience,
                 "announcementId": item.get("id").cloned().unwrap_or(Value::Null)
@@ -4931,6 +5138,31 @@ fn ensure_admin(user: &User) -> Result<(), AppError> {
         return Err(AppError::forbidden("only admins can access this endpoint"));
     }
     Ok(())
+}
+
+fn announcement_audiences_for_role(role: UserRole) -> Vec<String> {
+    match role {
+        UserRole::Seeker => vec!["all".to_string(), "seekers".to_string()],
+        UserRole::Agent => vec![
+            "all".to_string(),
+            "agents".to_string(),
+            "providers".to_string(),
+        ],
+        UserRole::Landlord => vec![
+            "all".to_string(),
+            "landlords".to_string(),
+            "providers".to_string(),
+        ],
+        UserRole::Admin => vec![
+            "all".to_string(),
+            "seekers".to_string(),
+            "agents".to_string(),
+            "landlords".to_string(),
+            "admins".to_string(),
+            "providers".to_string(),
+        ],
+        UserRole::Unassigned => vec!["all".to_string()],
+    }
 }
 
 pub async fn list_public_properties(

@@ -13,6 +13,24 @@ impl PostRepository {
         Self { pool }
     }
 
+    pub async fn find_by_id(&self, id: Uuid) -> Result<Option<Post>> {
+        let post = sqlx::query_as::<_, Post>(
+            r#"
+            SELECT id, author_id, budget, location, request_title, area, city, state, property_type,
+                   bedrooms, min_budget, max_budget, pricing_preference, desired_features,
+                   target_agent_id, target_property_id, target_property_title, target_property_image_url, target_property_location,
+                   status, description, created_at, updated_at
+            FROM posts
+            WHERE id = $1
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(post)
+    }
+
     pub async fn create(&self, input: &CreatePostInput, author_id: Uuid) -> Result<Post> {
         let post = sqlx::query_as::<_, Post>(
             r#"

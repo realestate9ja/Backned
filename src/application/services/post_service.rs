@@ -99,7 +99,7 @@ impl PostService {
             if let Some(agent) = self.users.find_agent_by_id(target_agent_id).await? {
                 vec![AgentNotificationTarget {
                     agent_id: agent.id,
-                    matched_city: agent.operating_city.unwrap_or_default(),
+                    matched_city: String::new(),
                     matched_state: agent.operating_state.unwrap_or_default(),
                 }]
             } else {
@@ -107,12 +107,12 @@ impl PostService {
             }
         } else {
             self.users
-                .list_notifiable_agents(&input.city, &input.state)
+                .list_notifiable_agents(&input.state)
                 .await?
                 .into_iter()
                 .map(|agent| AgentNotificationTarget {
                     agent_id: agent.id,
-                    matched_city: agent.operating_city,
+                    matched_city: String::new(),
                     matched_state: agent.operating_state,
                 })
                 .collect::<Vec<_>>()

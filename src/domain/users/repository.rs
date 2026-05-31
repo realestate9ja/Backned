@@ -263,24 +263,21 @@ impl UserRepository {
         Ok(user)
     }
 
-    pub async fn list_notifiable_agents(
-        &self,
-        city: &str,
-        state: &str,
-    ) -> Result<Vec<AgentNotificationRecipient>> {
+    pub async fn list_notifiable_agents(&self, state: &str) -> Result<Vec<AgentNotificationRecipient>> {
         let recipients = sqlx::query_as::<_, AgentNotificationRecipient>(
             r#"
             SELECT
                 id,
+                full_name,
+                email,
                 COALESCE(operating_city, '') AS operating_city,
                 COALESCE(operating_state, '') AS operating_state
             FROM users
             WHERE role = 'agent'
               AND notifications_enabled = TRUE
-              AND LOWER(COALESCE(operating_state, '')) = LOWER($2)
+              AND LOWER(COALESCE(operating_state, '')) = LOWER($1)
             "#,
         )
-        .bind(city.trim())
         .bind(state.trim())
         .fetch_all(&self.pool)
         .await?;
@@ -683,4 +680,3 @@ impl UserRepository {
         self.find_by_id(user_id).await
     }
 }
-

@@ -201,6 +201,8 @@ pub struct AgentNotificationSettingsView {
 #[derive(Debug, Clone, FromRow)]
 pub struct AgentNotificationRecipient {
     pub id: Uuid,
+    pub full_name: String,
+    pub email: String,
     pub operating_city: String,
     pub operating_state: String,
 }

@@ -370,12 +370,21 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
         .route("/admin/legal/policies/meta", get(api_v1::get_admin_policy_metadata).patch(api_v1::update_admin_policy_metadata))
         .route("/admin/properties", get(api_v1::list_admin_properties))
         .route("/admin/properties/{id}", delete(api_v1::delete_admin_property))
+        .route("/admin/reports/needs", get(api_v1::admin_need_analytics))
         .route("/admin/transactions", get(api_v1::list_admin_transactions))
         .route("/admin/disputes", get(api_v1::list_admin_disputes))
         .route("/admin/reports", get(api_v1::list_admin_reports))
         .route(
             "/admin/announcements",
             get(api_v1::list_admin_announcements).post(api_v1::create_admin_announcement),
+        )
+        .route(
+            "/announcements",
+            get(api_v1::list_public_announcements),
+        )
+        .route(
+            "/announcements/{id}",
+            get(api_v1::get_public_announcement),
         )
         .route(
             "/admin/verifications",
