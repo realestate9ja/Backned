@@ -15,12 +15,12 @@ pub struct RateLimiter {
     auth_window: Duration,
     trust_max_requests: usize,
     trust_window: Duration,
-    connection: ConnectionManager,
+    connection: Option<ConnectionManager>,
 }
 
 impl RateLimiter {
     pub fn new(
-        connection: ConnectionManager,
+        connection: Option<ConnectionManager>,
         auth_max_requests: usize,
         auth_window_seconds: u64,
         trust_max_requests: usize,
@@ -36,6 +36,9 @@ impl RateLimiter {
     }
 
     pub async fn check(&self, scope: RateLimitScope, key: &str) -> Result<bool> {
+        let Some(mut connection) = self.connection.clone() else {
+            return Ok(true);
+        };
         let (max_requests, window) = match scope {
             RateLimitScope::Auth => (self.auth_max_requests, self.auth_window),
             RateLimitScope::Trust => (self.trust_max_requests, self.trust_window),
@@ -52,7 +55,6 @@ impl RateLimiter {
             "#,
         );
 
-        let mut connection = self.connection.clone();
         let current: i64 = script
             .key(redis_key)
             .arg(window.as_secs() as i64)

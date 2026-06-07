@@ -62,9 +62,7 @@ impl AppState {
 
         let password_service = PasswordService;
         let jwt_service = JwtService::new(&settings);
-        let cache_service = CacheService::new(&settings.redis_url, settings.cache_ttl_seconds)
-            .await
-            .expect("invalid redis config");
+        let cache_service = CacheService::new(&settings.redis_url, settings.cache_ttl_seconds).await;
         let livekit_service = LiveKitService::new(
             settings.livekit_url.clone(),
             settings.livekit_api_key.clone(),
@@ -74,7 +72,7 @@ impl AppState {
         let mail_service = build_mail_service(&settings).expect("invalid mail config");
         let audit_service = AuditService::new(audit_repository);
         let rate_limiter = RateLimiter::new(
-            cache_service.connection(),
+            cache_service.maybe_connection(),
             settings.auth_rate_limit_max_requests,
             settings.auth_rate_limit_window_seconds,
             settings.trust_rate_limit_max_requests,

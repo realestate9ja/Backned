@@ -187,6 +187,7 @@ pub fn create_router(state: AppState) -> Router {
 
 fn create_api_v1_router(state: AppState) -> Router<AppState> {
     Router::new()
+        .route("/health", get(health::health))
         .route(
             "/auth/register",
             post(api_v1::register).route_layer(middleware::from_fn_with_state(
@@ -202,6 +203,16 @@ fn create_api_v1_router(state: AppState) -> Router<AppState> {
             )),
         )
         .route("/auth/verify-email", get(auth::verify_email))
+        .route("/admin/contact-message", post(contact::create_contact_message))
+        .route("/admin/contact-messages", get(contact::get_contact_messages))
+        .route(
+            "/admin/contact-messages/{message_id}",
+            get(contact::get_contact_message),
+        )
+        .route(
+            "/admin/contact-messages/{message_id}/read",
+            patch(contact::mark_message_as_read),
+        )
         .route(
             "/auth/send-email-code",
             post(api_v1::send_email_code).route_layer(middleware::from_fn_with_state(

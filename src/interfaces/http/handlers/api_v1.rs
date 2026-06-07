@@ -434,6 +434,8 @@ pub struct OfferView {
     pub provider_phone: Option<String>,
     #[sqlx(default)]
     pub provider_image_url: Option<String>,
+    #[sqlx(default)]
+    pub can_view_agent_profile: bool,
 }
 
 #[derive(Debug, Serialize, FromRow)]
@@ -1910,7 +1912,14 @@ pub async fn list_seeker_offers(
             property.images AS property_images,
             provider.full_name AS provider_name,
             provider.phone AS provider_phone,
-            profiles.avatar_url AS provider_image_url
+            profiles.avatar_url AS provider_image_url,
+            EXISTS(
+                SELECT 1
+                FROM bookings b
+                WHERE b.offer_id = o.id
+                  AND b.status = 'confirmed'
+                  AND b.confirmed_at IS NOT NULL
+            ) AS can_view_agent_profile
         FROM offers o
         INNER JOIN posts p ON p.id = o.need_post_id
         INNER JOIN properties property ON property.id = o.property_id
@@ -4786,12 +4795,13 @@ pub async fn create_admin_announcement(
     ensure_admin(&user)?;
     let item = sqlx::query_scalar::<_, Value>(
         r#"
-        SELECT to_jsonb(x)
-        FROM (
+        WITH inserted AS (
             INSERT INTO announcements (id, title, body, audience, status, published_at, created_by)
             VALUES ($1, $2, $3, $4, 'published', NOW(), $5)
             RETURNING *
-        ) x
+        )
+        SELECT to_jsonb(inserted)
+        FROM inserted
         "#,
     )
     .bind(Uuid::new_v4())
