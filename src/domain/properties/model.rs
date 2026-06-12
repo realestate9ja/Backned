@@ -56,6 +56,14 @@ pub struct Property {
     pub exact_address: String,
     pub description: String,
     pub images: Vec<String>,
+    #[sqlx(default)]
+    pub bedrooms: i32,
+    #[sqlx(default)]
+    pub bathrooms: i32,
+    #[sqlx(default)]
+    pub bedrooms_label: Option<String>,
+    #[sqlx(default)]
+    pub property_category: Option<String>,
     pub contact_name: String,
     pub contact_phone: String,
     pub is_service_apartment: bool,
@@ -76,6 +84,14 @@ pub struct PropertyListItem {
     pub location: String,
     pub description: String,
     pub images: Vec<String>,
+    #[sqlx(default)]
+    pub bedrooms: i32,
+    #[sqlx(default)]
+    pub bathrooms: i32,
+    #[sqlx(default)]
+    pub bedrooms_label: Option<String>,
+    #[sqlx(default)]
+    pub property_category: Option<String>,
     pub is_service_apartment: bool,
     #[sqlx(default)]
     pub listing_type: String,
@@ -125,6 +141,14 @@ pub struct PropertyDetail {
     pub location: String,
     pub description: String,
     pub images: Vec<String>,
+    #[sqlx(default)]
+    pub bedrooms: i32,
+    #[sqlx(default)]
+    pub bathrooms: i32,
+    #[sqlx(default)]
+    pub bedrooms_label: Option<String>,
+    #[sqlx(default)]
+    pub property_category: Option<String>,
     pub is_service_apartment: bool,
     #[sqlx(default)]
     pub listing_type: String,

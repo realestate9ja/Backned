@@ -1488,6 +1488,10 @@ pub async fn list_agent_properties(
             p.location,
             p.description,
             p.images,
+            p.bedrooms,
+            p.bathrooms,
+            p.bedrooms_label,
+            p.property_category,
             p.is_service_apartment,
             p.listing_type,
             p.status,
@@ -2475,7 +2479,8 @@ pub async fn confirm_booking_schedule(
     let booking = sqlx::query_as::<_, BookingView>(
         r#"
         UPDATE bookings b
-        SET confirmed_at = NOW(),
+        SET status = 'confirmed',
+            confirmed_at = NOW(),
             updated_at = NOW()
         WHERE b.id = $1
           AND b.provider_user_id = $2
@@ -3177,6 +3182,10 @@ pub async fn list_landlord_properties(
             p.location,
             p.description,
             p.images,
+            p.bedrooms,
+            p.bathrooms,
+            p.bedrooms_label,
+            p.property_category,
             p.is_service_apartment,
             p.listing_type,
             p.status,
@@ -4042,11 +4051,17 @@ pub async fn update_agent_property(
     }
 
     // Price logic
+    const MIN_PROPERTY_PRICE: i64 = 50_000;
     let old_price = current.price;
-    let new_price = payload.price.unwrap_or(old_price);
+    let requested_price = payload.price;
+    let new_price = requested_price.unwrap_or(old_price);
     let mut price_change_pending = false;
     let mut saved_fields = vec![];
     let mut message = String::new();
+
+    if requested_price.is_some() && new_price < MIN_PROPERTY_PRICE && new_price != old_price {
+        return Err(AppError::bad_request("price must be at least NGN 50,000"));
+    }
 
     if new_price > old_price {
         // Save all other fields except price

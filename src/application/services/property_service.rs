@@ -67,6 +67,11 @@ impl PropertyService {
 
         validation::validate_required(&input.title, "title")?;
         validation::validate_money(input.price, "price")?;
+        if input.price < 50_000 {
+            return Err(AppError::bad_request(
+                "price must be at least NGN 50,000",
+            ));
+        }
         validation::validate_required(&input.location, "location")?;
         validation::validate_required(&input.exact_address, "exact_address")?;
         validation::validate_required(&input.description, "description")?;

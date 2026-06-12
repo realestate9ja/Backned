@@ -31,6 +31,7 @@ impl PropertyRepository {
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             RETURNING id, owner_id, agent_id, title, price, location, exact_address, description, images,
+                      bedrooms, bathrooms, bedrooms_label, property_category,
                       contact_name, contact_phone, is_service_apartment, listing_type, self_managed, status,
                       verified_by, verified_at, created_at, updated_at
             "#,
@@ -73,6 +74,10 @@ impl PropertyRepository {
                 p.location,
                 p.description,
                 p.images,
+                p.bedrooms,
+                p.bathrooms,
+                p.bedrooms_label,
+                p.property_category,
                 p.is_service_apartment,
                 p.listing_type,
                 p.status,
@@ -155,6 +160,10 @@ impl PropertyRepository {
                 p.location,
                 p.description,
                 p.images,
+                p.bedrooms,
+                p.bathrooms,
+                p.bedrooms_label,
+                p.property_category,
                 p.is_service_apartment,
                 p.listing_type,
                 p.status,
