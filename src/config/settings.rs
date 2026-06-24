@@ -30,6 +30,7 @@ pub struct Settings {
     pub smtp_password: Option<String>,
     pub smtp_use_starttls: bool,
     pub run_booking_reminder_cron: bool,
+    pub run_verification_reminder_cron: bool,
     pub run_migrations_on_startup: bool,
 }
 
@@ -117,6 +118,10 @@ impl Settings {
             .unwrap_or_else(|_| "false".to_string())
             .parse()
             .context("RUN_BOOKING_REMINDER_CRON must be a valid boolean")?;
+        let run_verification_reminder_cron = std::env::var("RUN_VERIFICATION_REMINDER_CRON")
+            .unwrap_or_else(|_| "false".to_string())
+            .parse()
+            .context("RUN_VERIFICATION_REMINDER_CRON must be a valid boolean")?;
         let run_migrations_on_startup = std::env::var("RUN_MIGRATIONS_ON_STARTUP")
             .unwrap_or_else(|_| "false".to_string())
             .parse()
@@ -151,6 +156,7 @@ impl Settings {
             smtp_password,
             smtp_use_starttls,
             run_booking_reminder_cron,
+            run_verification_reminder_cron,
             run_migrations_on_startup,
         })
     }

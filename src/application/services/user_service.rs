@@ -151,18 +151,19 @@ impl UserService {
         if !actor.role.can_moderate() {
             return Err(AppError::forbidden("only admins can verify agents"));
         }
-        if !matches!(
-            input.verification_status.as_str(),
-            "pending" | "verified" | "rejected"
-        ) {
-            return Err(AppError::bad_request("invalid verification_status"));
-        }
+        let normalized_status = match input.verification_status.trim().to_lowercase().as_str() {
+            "verified" => "approved".to_string(),
+            "pending" => "pending".to_string(),
+            "approved" => "approved".to_string(),
+            "rejected" => "rejected".to_string(),
+            _ => return Err(AppError::bad_request("invalid verification_status")),
+        };
 
         let updated = self
             .users
             .update_agent_verification(
                 agent_id,
-                input.verification_status.trim(),
+                normalized_status.as_str(),
                 input.verification_notes.as_deref().map(str::trim),
             )
             .await?

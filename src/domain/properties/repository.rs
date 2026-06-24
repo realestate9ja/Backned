@@ -27,9 +27,11 @@ impl PropertyRepository {
             r#"
             INSERT INTO properties (
                 id, owner_id, agent_id, title, price, location, exact_address, description, images,
+                bedrooms, bathrooms, bedrooms_label, property_category,
                 contact_name, contact_phone, is_service_apartment, listing_type, self_managed, status
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, 0), COALESCE($11, 1), $12, $13,
+                    $14, $15, $16, $17, $18, $19)
             RETURNING id, owner_id, agent_id, title, price, location, exact_address, description, images,
                       bedrooms, bathrooms, bedrooms_label, property_category,
                       contact_name, contact_phone, is_service_apartment, listing_type, self_managed, status,
@@ -45,6 +47,10 @@ impl PropertyRepository {
         .bind(&input.exact_address)
         .bind(&input.description)
         .bind(&input.images)
+        .bind(input.bedrooms)
+        .bind(input.bathrooms)
+        .bind(input.bedrooms_label.as_deref())
+        .bind(input.property_category.as_deref())
         .bind(&input.contact_name)
         .bind(&input.contact_phone)
         .bind(input.is_service_apartment)

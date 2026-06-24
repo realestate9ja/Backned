@@ -163,8 +163,8 @@ impl MailService {
         }
     }
 
-    // Helper function to build email templates without header images
-    fn build_email_template_no_header(
+    // Helper function to build email templates without header images.
+    pub(crate) fn build_email_template_no_header(
         &self,
         greeting: &str,
         body_text: &str,
@@ -231,10 +231,10 @@ body, table, td, a, p {{ font-family: Arial, sans-serif !important; }}\
         )
     }
 
-    // Helper function to build refined email templates with header SVGs
+    // Helper function to build refined email templates without header images.
     fn build_email_template(
         &self,
-        header_image_url: &str,
+        _header_image_url: &str,
         greeting: &str,
         body_text: &str,
         cta_section: Option<&str>,
@@ -266,17 +266,17 @@ body, table, td, a, p {{ font-family: Arial, sans-serif !important; }}\
 <td align=\"center\" style=\"padding:24px 12px;\">\
 <table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"560\" style=\"width:560px;max-width:560px;background-color:#FFFFFF;background:#FFFFFF;border-radius:20px;overflow:hidden;\" bgcolor=\"#FFFFFF\">\
 <tr>\
-<td style=\"padding:0;\">\
-<img src=\"{0}\" alt=\"Verinest Email Header\" width=\"560\" style=\"display:block;width:100%;max-width:560px;height:auto;border:0;outline:none;text-decoration:none;\" />\
+<td style=\"padding:24px 40px 0 40px;background-color:#FFFFFF;background:#FFFFFF;\" bgcolor=\"#FFFFFF\">\
+<div style=\"display:inline-block;padding:6px 10px;border-radius:999px;background:#FFF3ED;color:#C4714A;font-size:8px;letter-spacing:0.2em;text-transform:uppercase;font-weight:700;\">Verinest</div>\
 </td>\
 </tr>\
 <tr>\
-<td style=\"padding:36px 40px 32px 40px;background-color:#FFFFFF;background:#FFFFFF;\" bgcolor=\"#FFFFFF\">\
-<p style=\"margin:0 0 14px 0;font-size:15px;line-height:1.5;font-weight:600;color:#1A1814;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">{1}</p>\
-<p style=\"margin:0 0 20px 0;font-size:13.5px;line-height:1.75;color:#5A5248;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">{2}</p>\
-{3}\
+<td style=\"padding:24px 40px 32px 40px;background-color:#FFFFFF;background:#FFFFFF;\" bgcolor=\"#FFFFFF\">\
+<p style=\"margin:0 0 14px 0;font-size:15px;line-height:1.5;font-weight:600;color:#1A1814;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">{0}</p>\
+<p style=\"margin:0 0 20px 0;font-size:13.5px;line-height:1.75;color:#5A5248;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">{1}</p>\
+{2}\
 <div style=\"height:1px;line-height:1px;font-size:1px;background:#EDE8E0;margin:28px 0;\">&nbsp;</div>\
-<p style=\"margin:0;font-size:12px;line-height:1.75;color:#9A8F84;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">{4}</p>\
+<p style=\"margin:0;font-size:12px;line-height:1.75;color:#9A8F84;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;\">{3}</p>\
 </td>\
 </tr>\
 <tr>\
@@ -301,7 +301,7 @@ body, table, td, a, p {{ font-family: Arial, sans-serif !important; }}\
 </center>\
 </body>\
 </html>",
-            header_image_url, greeting, body_text, cta_html, footer_text,
+            greeting, body_text, cta_html, footer_text,
         )
     }
 

@@ -340,7 +340,14 @@ impl UserRepository {
         verification_status: &str,
         verification_notes: Option<&str>,
     ) -> Result<Option<User>> {
-        let verified_at = (verification_status == "verified").then_some(chrono::Utc::now());
+        let normalized_status = match verification_status.trim().to_lowercase().as_str() {
+            "verified" => "approved".to_string(),
+            "approved" => "approved".to_string(),
+            "pending" => "pending".to_string(),
+            "rejected" => "rejected".to_string(),
+            other => other.to_string(),
+        };
+        let verified_at = (normalized_status == "approved").then_some(chrono::Utc::now());
         let user = sqlx::query_as::<_, User>(
             r#"
             UPDATE users
@@ -357,7 +364,7 @@ impl UserRepository {
             "#,
         )
         .bind(agent_id)
-        .bind(verification_status)
+        .bind(normalized_status.as_str())
         .bind(verification_notes)
         .bind(verified_at)
         .fetch_optional(&self.pool)

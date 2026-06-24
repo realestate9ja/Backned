@@ -59,9 +59,9 @@ impl PropertyService {
                 "account is temporarily restricted from listing properties",
             ));
         }
-        if actor.role == UserRole::Agent && actor.verification_status != "verified" {
+        if actor.role == UserRole::Agent && !actor.is_verification_approved() {
             return Err(AppError::forbidden(
-                "agent must be verified before listing properties",
+                "agent must be approved before listing properties",
             ));
         }
 
@@ -78,6 +78,19 @@ impl PropertyService {
         validation::validate_required(&input.contact_name, "contact_name")?;
         validation::validate_required(&input.contact_phone, "contact_phone")?;
         validation::validate_non_empty_vec(&input.images, "images")?;
+        if let Some(bedrooms) = input.bedrooms {
+            if bedrooms < 0 {
+                return Err(AppError::bad_request("bedrooms must not be negative"));
+            }
+        }
+        if let Some(bathrooms) = input.bathrooms {
+            if bathrooms < 0 {
+                return Err(AppError::bad_request("bathrooms must not be negative"));
+            }
+        }
+        if let Some(label) = input.bedrooms_label.as_ref() {
+            validation::validate_required(label, "bedrooms_label")?;
+        }
 
         let (assigned_agent_id, self_managed, requested_agent_id, status) = match actor.role {
             UserRole::Agent => (

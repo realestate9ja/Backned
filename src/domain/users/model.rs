@@ -68,6 +68,20 @@ impl User {
     pub fn role_label(&self) -> &'static str {
         self.role.as_str()
     }
+
+    pub fn verification_status_normalized(&self) -> &'static str {
+        match self.verification_status.trim().to_lowercase().as_str() {
+            "approved" | "verified" => "approved",
+            "pending" | "submitted" | "in_review" => "pending",
+            "rejected" => "rejected",
+            "not_required" => "not_required",
+            _ => "pending",
+        }
+    }
+
+    pub fn is_verification_approved(&self) -> bool {
+        matches!(self.verification_status_normalized(), "approved")
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

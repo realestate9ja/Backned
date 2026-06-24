@@ -1433,6 +1433,8 @@ pub async fn create_verification_document(
         return Err(AppError::not_found("verification not found"));
     }
 
+    validate_verification_document_input(&payload)?;
+
     let document = sqlx::query_as::<_, VerificationDocumentView>(
         r#"
         INSERT INTO verification_documents (id, verification_id, document_type, file_url, file_key, mime_type)
@@ -3585,9 +3587,10 @@ pub async fn admin_update_verification(
     Json(payload): Json<UpdateAgentVerificationInput>,
 ) -> Result<Json<VerificationView>, AppError> {
     ensure_admin(&user)?;
-    let mapped_status = match payload.verification_status.as_str() {
+    let normalized_input = payload.verification_status.trim().to_lowercase();
+    let mapped_status = match normalized_input.as_str() {
         "pending" => "in_review",
-        "verified" => "approved",
+        "approved" | "verified" => "approved",
         "rejected" => "rejected",
         other => other,
     };
@@ -3627,8 +3630,8 @@ pub async fn admin_update_verification(
         .await?
         .ok_or_else(|| AppError::not_found("user not found"))?;
 
-    let legacy_status = match mapped_status {
-        "approved" => "verified",
+    let user_status = match mapped_status {
+        "approved" => "approved",
         "rejected" => "rejected",
         "in_review" | "submitted" => "pending",
         _ => "pending",
@@ -3638,13 +3641,13 @@ pub async fn admin_update_verification(
         UPDATE users
         SET verification_status = $2,
             verification_notes = $3,
-            verified_at = CASE WHEN $2 = 'verified' THEN NOW() ELSE verified_at END,
+            verified_at = CASE WHEN $2 = 'approved' THEN NOW() ELSE verified_at END,
             updated_at = NOW()
         WHERE id = $1
         "#,
     )
     .bind(user_record.id)
-    .bind(legacy_status)
+    .bind(user_status)
     .bind(payload.verification_notes.as_deref())
     .execute(&state.pool)
     .await?;
@@ -3652,39 +3655,39 @@ pub async fn admin_update_verification(
     let email = state.mail_service.kyc_status_email(
         user_record.email.clone(),
         &user_record.full_name,
-        legacy_status,
+        user_status,
         payload.verification_notes.as_deref(),
-        &kyc_header_asset(legacy_status),
+        &kyc_header_asset(user_status),
     );
     state.mail_service.send(email).await?;
 
     insert_notification(
         &state.pool,
         user_record.id,
-        if legacy_status == "verified" {
+        if user_status == "approved" {
             "kyc_approved"
-        } else if legacy_status == "rejected" {
+        } else if user_status == "rejected" {
             "kyc_rejected"
         } else {
             "kyc_updated"
         },
-        if legacy_status == "verified" {
+        if user_status == "approved" {
             "KYC approved"
-        } else if legacy_status == "rejected" {
+        } else if user_status == "rejected" {
             "KYC rejected"
         } else {
             "KYC updated"
         },
-        if legacy_status == "verified" {
+        if user_status == "approved" {
             "Your identity verification was approved."
-        } else if legacy_status == "rejected" {
+        } else if user_status == "rejected" {
             "Your identity verification was rejected. Review the notes and resubmit."
         } else {
             "Your identity verification status changed."
         },
         Some(match user_record.role {
-            UserRole::Agent if legacy_status == "rejected" => "/onboarding",
-            UserRole::Landlord if legacy_status == "rejected" => "/onboarding",
+            UserRole::Agent if user_status == "rejected" => "/onboarding",
+            UserRole::Landlord if user_status == "rejected" => "/onboarding",
             UserRole::Agent => "/provider/settings",
             UserRole::Landlord => "/landlord/settings",
             UserRole::Seeker => "/seeker/settings",
@@ -3693,7 +3696,7 @@ pub async fn admin_update_verification(
         }),
         json!({
             "verificationId": verification.id,
-            "status": legacy_status,
+            "status": user_status,
             "notes": payload.verification_notes
         }),
     )
@@ -4413,11 +4416,11 @@ pub async fn list_admin_users(
 pub async fn admin_suspend_user(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
-    axum::extract::Path(user_id): axum::extract::Path<String>,
+    axum::extract::Path(user_id): axum::extract::Path<Uuid>,
 ) -> Result<Json<Value>, AppError> {
     ensure_admin(&user)?;
     sqlx::query("UPDATE users SET is_banned = TRUE WHERE id = $1")
-        .bind(&user_id)
+        .bind(user_id)
         .execute(&state.pool)
         .await?;
     Ok(Json(serde_json::json!({ "success": true, "message": "User suspended" })))
@@ -4426,11 +4429,11 @@ pub async fn admin_suspend_user(
 pub async fn admin_unsuspend_user(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
-    axum::extract::Path(user_id): axum::extract::Path<String>,
+    axum::extract::Path(user_id): axum::extract::Path<Uuid>,
 ) -> Result<Json<Value>, AppError> {
     ensure_admin(&user)?;
     sqlx::query("UPDATE users SET is_banned = FALSE WHERE id = $1")
-        .bind(&user_id)
+        .bind(user_id)
         .execute(&state.pool)
         .await?;
     Ok(Json(serde_json::json!({ "success": true, "message": "User unsuspended" })))
@@ -5143,6 +5146,44 @@ async fn fetch_verification_documents(
     .fetch_all(pool)
     .await?;
     Ok(documents)
+}
+
+fn validate_verification_document_input(payload: &VerificationDocumentInput) -> Result<(), AppError> {
+    let document_type = payload.document_type.trim().to_lowercase();
+    let mime_type = payload.mime_type.trim().to_lowercase();
+    let file_url = payload.file_url.trim();
+
+    if file_url.is_empty() || !file_url.starts_with("https://res.cloudinary.com/") {
+        return Err(AppError::bad_request(
+            "verification documents must be uploaded through Cloudinary",
+        ));
+    }
+
+    if payload.file_key.trim().is_empty() {
+        return Err(AppError::bad_request("verification document file key is required"));
+    }
+
+    match document_type.as_str() {
+        "selfie" => {
+            if !mime_type.starts_with("image/") {
+                return Err(AppError::bad_request("selfie documents must be images"));
+            }
+        }
+        "nin" | "property_deed_or_cofo" | "cac_certificate" => {
+            if !(mime_type.starts_with("image/") || mime_type == "application/pdf") {
+                return Err(AppError::bad_request(
+                    "verification documents must be image or PDF files",
+                ));
+            }
+        }
+        other => {
+            return Err(AppError::bad_request(format!(
+                "unsupported verification document type: {other}"
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 fn ensure_landlord(user: &User) -> Result<(), AppError> {

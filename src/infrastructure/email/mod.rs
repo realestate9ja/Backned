@@ -1,3 +1,3 @@
 pub mod service;
 
-pub use service::MailService;
+pub use service::{MailService, OutboundEmail};

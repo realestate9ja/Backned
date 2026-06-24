@@ -2,6 +2,7 @@ use anyhow::Context;
 use axum::Router;
 use realestate::{
     application::services::BookingEmailReminderService,
+    application::services::VerificationReminderService,
     build_app_with_state,
     config::Settings,
     db::{create_pool, run_migrations},
@@ -40,6 +41,17 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("booking reminder cron enabled in API process");
     } else {
         tracing::info!("booking reminder cron disabled in API process");
+    }
+    if settings.run_verification_reminder_cron {
+        VerificationReminderService::new(
+            state.pool.clone(),
+            state.mail_service.clone(),
+            settings.app_base_url.clone(),
+        )
+        .spawn_cron();
+        tracing::info!("verification reminder cron enabled in API process");
+    } else {
+        tracing::info!("verification reminder cron disabled in API process");
     }
     let app: Router = build_app_with_state(state);
     let addr = SocketAddr::from(([0, 0, 0, 0], settings.port));
