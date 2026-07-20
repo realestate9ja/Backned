@@ -64,7 +64,7 @@ impl UserRepository {
         let user = sqlx::query_as::<_, User>(
             r#"
             INSERT INTO users (id, full_name, email, email_verified, password_hash, role, verification_status, verified_at)
-            VALUES ($1, $2, $3, TRUE, $4, 'admin', 'verified', NOW())
+            VALUES ($1, $2, $3, TRUE, $4, $5, 'verified', NOW())
             RETURNING id, full_name, email, email_verified, password_hash, role, phone, bio,
                       notifications_enabled, operating_city, operating_state,
                       verification_status, verification_notes, verified_at,
@@ -76,6 +76,7 @@ impl UserRepository {
         .bind(&input.full_name)
         .bind(input.email.to_lowercase())
         .bind(password_hash)
+        .bind(input.role)
         .fetch_one(&self.pool)
         .await?;
 

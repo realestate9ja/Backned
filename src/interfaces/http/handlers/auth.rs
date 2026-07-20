@@ -157,6 +157,7 @@ pub async fn bootstrap_admin(
     Json(payload): Json<BootstrapAdminInput>,
 ) -> Result<(StatusCode, HeaderMap, Json<crate::domain::users::AuthResponse>), AppError> {
     let email = payload.email.clone();
+    let role_name = payload.role.as_str().to_string();
     let response = state.auth_use_cases.bootstrap_admin(payload).await?;
     state
         .audit_service
@@ -164,7 +165,7 @@ pub async fn bootstrap_admin(
             AuditActor {
                 user_id: Some(response.user.id),
                 email: Some(email),
-                role: Some("admin".to_string()),
+                role: Some(role_name),
             },
             AuditEvent {
                 request_id: context.request_id,

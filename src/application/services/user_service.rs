@@ -304,7 +304,7 @@ impl UserService {
                     }),
                 }
             }
-            UserRole::Admin => DashboardResponse {
+            UserRole::Admin | UserRole::SuperAdmin => DashboardResponse {
                 role: actor.role,
                 profile,
                 seeker: None,

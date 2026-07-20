@@ -36,7 +36,7 @@ fn frontend_role(role: UserRole) -> &'static str {
         UserRole::Unassigned | UserRole::Seeker => "user",
         UserRole::Agent => "worker",
         UserRole::Landlord => "employer",
-        UserRole::Admin => "admin",
+        UserRole::Admin | UserRole::SuperAdmin => "admin",
     }
 }
 

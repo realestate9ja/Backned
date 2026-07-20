@@ -269,6 +269,27 @@ pub struct AdminDeletePropertyInput {
     pub password: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminReviewPropertyInput {
+    pub decision: String,
+    pub review_notes: Option<String>,
+}
+
+async fn ensure_property_review_columns(pool: &sqlx::PgPool) -> Result<(), AppError> {
+    sqlx::query(
+        r#"
+        ALTER TABLE properties
+            ADD COLUMN IF NOT EXISTS reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+            ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS review_notes TEXT
+        "#,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthMeResponse {
@@ -1203,7 +1224,7 @@ pub async fn upsert_onboarding_profile(
             .execute(&state.pool)
             .await?;
         }
-        UserRole::Admin | UserRole::Unassigned => {}
+        UserRole::Admin | UserRole::SuperAdmin | UserRole::Unassigned => {}
     }
 
     let refreshed_user = state
@@ -3691,7 +3712,7 @@ pub async fn admin_update_verification(
             UserRole::Agent => "/provider/settings",
             UserRole::Landlord => "/landlord/settings",
             UserRole::Seeker => "/seeker/settings",
-            UserRole::Admin => "/admin/settings",
+            UserRole::Admin | UserRole::SuperAdmin => "/admin/settings",
             UserRole::Unassigned => "/onboarding",
         }),
         json!({
@@ -3989,6 +4010,7 @@ pub async fn update_agent_property(
         crate::domain::properties::PropertyStatus::PendingVerification => "pending_verification",
         crate::domain::properties::PropertyStatus::Verified => "verified",
         crate::domain::properties::PropertyStatus::Published => "published",
+        crate::domain::properties::PropertyStatus::Rejected => "rejected",
         crate::domain::properties::PropertyStatus::Hidden => "hidden",
         crate::domain::properties::PropertyStatus::Suspended => "suspended",
         crate::domain::properties::PropertyStatus::RentedOut => "rented_out",
@@ -4009,6 +4031,26 @@ pub async fn update_agent_property(
                         locked_until.format("%d %b %Y %I:%M %p WAT")
                     )));
                 }
+            }
+        }
+    }
+
+    if matches!(
+        current.status,
+        crate::domain::properties::PropertyStatus::PendingVerification
+            | crate::domain::properties::PropertyStatus::Rejected
+    ) {
+        if let Some(next_status) = &requested_status {
+            let normalized_next = next_status.trim().to_lowercase();
+            let allowed = if matches!(current.status, crate::domain::properties::PropertyStatus::Rejected) {
+                normalized_next == "pending_verification" || normalized_next == current_status
+            } else {
+                normalized_next == current_status
+            };
+            if !allowed {
+                return Err(AppError::bad_request(
+                    "This property is under admin review and cannot be published until approved.",
+                ));
             }
         }
     }
@@ -4439,12 +4481,61 @@ pub async fn admin_unsuspend_user(
     Ok(Json(serde_json::json!({ "success": true, "message": "User unsuspended" })))
 }
 
+pub async fn superadmin_assign_role(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    axum::extract::Path(target_user_id): axum::extract::Path<Uuid>,
+    Json(payload): Json<SelectRoleInput>,
+) -> Result<Json<Value>, AppError> {
+    ensure_superadmin(&user)?;
+
+    // Prevent assignment of SuperAdmin role through API (only via bootstrap)
+    if payload.role == UserRole::SuperAdmin {
+        return Err(AppError::bad_request("superadmin role can only be assigned via bootstrap"));
+    }
+
+    // Allow valid user roles for assignment
+    if !matches!(
+        payload.role,
+        UserRole::Unassigned | UserRole::Seeker | UserRole::Agent | UserRole::Landlord | UserRole::Admin
+    ) {
+        return Err(AppError::bad_request("invalid role for assignment"));
+    }
+
+    // Get target user
+    let target_user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
+        .bind(target_user_id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| AppError::not_found("target user not found"))?;
+
+    // Cannot change role of another superadmin
+    if target_user.role == UserRole::SuperAdmin && target_user.id != user.id {
+        return Err(AppError::forbidden("cannot modify superadmin role"));
+    }
+
+    // Update the role
+    let _updated = state
+        .user_repository
+        .update_role(target_user_id, payload.role)
+        .await?
+        .ok_or_else(|| AppError::not_found("user not found"))?;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "message": format!("User role updated to {}", payload.role.as_str()),
+        "user_id": target_user_id,
+        "new_role": payload.role.as_str()
+    })))
+}
+
 pub async fn list_admin_properties(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
     Query(params): Query<PaginationParams>,
 ) -> Result<Json<PaginatedResponse<Value>>, AppError> {
     ensure_admin(&user)?;
+    ensure_property_review_columns(&state.pool).await?;
     let read_pool = state.read_pool();
     let pagination = Pagination::try_from(params)?;
     let total = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM properties")
@@ -4463,12 +4554,17 @@ pub async fn list_admin_properties(
                 p.price,
                 p.status::text AS status,
                 p.created_at,
+                p.reviewed_at,
+                p.review_notes,
+                p.reviewed_by,
+                p.created_at + INTERVAL '48 hours' AS review_due_at,
                 p.is_service_apartment,
                 p.listing_type,
                 owner.full_name AS owner_name,
                 owner_profile.avatar_url AS owner_avatar_url,
                 agent.full_name AS agent_name,
                 agent_profile.avatar_url AS agent_avatar_url,
+                reviewer.full_name AS reviewed_by_name,
                 COALESCE(report_stats.report_count, 0) AS report_count,
                 COALESCE(report_stats.open_report_count, 0) AS open_report_count
             FROM properties p
@@ -4476,6 +4572,7 @@ pub async fn list_admin_properties(
             LEFT JOIN profiles owner_profile ON owner_profile.user_id = owner.id
             LEFT JOIN users agent ON agent.id = p.agent_id
             LEFT JOIN profiles agent_profile ON agent_profile.user_id = agent.id
+            LEFT JOIN users reviewer ON reviewer.id = p.reviewed_by
             LEFT JOIN (
                 SELECT
                     property_id,
@@ -4502,6 +4599,143 @@ pub async fn list_admin_properties(
         page: pagination.page(),
         per_page: pagination.per_page(),
     }))
+}
+
+pub async fn review_admin_property(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(property_id): Path<Uuid>,
+    Json(payload): Json<AdminReviewPropertyInput>,
+) -> Result<Json<Value>, AppError> {
+    ensure_admin(&user)?;
+    ensure_property_review_columns(&state.pool).await?;
+
+    let decision = payload.decision.trim().to_lowercase();
+    if !matches!(decision.as_str(), "approved" | "rejected") {
+        return Err(AppError::bad_request("invalid review decision"));
+    }
+    if decision == "rejected" && payload.review_notes.as_deref().map(str::trim).unwrap_or("").is_empty() {
+        return Err(AppError::bad_request("review notes are required when rejecting a property"));
+    }
+
+    let current = sqlx::query(
+        r#"
+        SELECT
+            p.id,
+            p.title,
+            p.location,
+            p.status::text AS status,
+            p.owner_id,
+            p.agent_id,
+            owner.full_name AS owner_name,
+            owner.email AS owner_email,
+            agent.full_name AS agent_name,
+            agent.email AS agent_email
+        FROM properties p
+        INNER JOIN users owner ON owner.id = p.owner_id
+        LEFT JOIN users agent ON agent.id = p.agent_id
+        WHERE p.id = $1
+        "#,
+    )
+    .bind(property_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::not_found("property not found"))?;
+
+    let current_status: String = current.get("status");
+    if !matches!(current_status.as_str(), "pending_verification" | "rejected") {
+        return Err(AppError::bad_request(
+            "only pending review properties can be reviewed",
+        ));
+    }
+
+    let new_status = if decision == "approved" { "published" } else { "rejected" };
+    let review_notes = payload.review_notes.as_deref().map(str::trim);
+
+    let updated = sqlx::query(
+        r#"
+        UPDATE properties
+        SET status = $2::property_status,
+            reviewed_by = $3,
+            reviewed_at = NOW(),
+            review_notes = $4,
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING id, title, location, owner_id, agent_id
+        "#,
+    )
+    .bind(property_id)
+    .bind(new_status)
+    .bind(user.id)
+    .bind(review_notes)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::not_found("property not found"))?;
+
+    let property_title: String = updated.get("title");
+    let property_location: String = updated.get("location");
+    let owner_id: Uuid = updated.get("owner_id");
+    let agent_id: Option<Uuid> = updated.get("agent_id");
+
+    let mut recipients = vec![owner_id];
+    if let Some(agent_id) = agent_id {
+        if agent_id != owner_id {
+            recipients.push(agent_id);
+        }
+    }
+
+    let action_taken = if decision == "approved" {
+        "approved and published"
+    } else {
+        "rejected"
+    };
+    let review_reason = review_notes.unwrap_or("No additional notes provided.");
+    let action_url = format!("/provider/listings/{property_id}");
+    let header_image_url = header_asset_url(HEADER_SECURITY_DARK);
+
+    for recipient_id in recipients {
+        if let Some(recipient) = state.user_repository.find_by_id(recipient_id).await? {
+            insert_notification(
+                &state.pool,
+                recipient.id,
+                "property_review",
+                &format!("Property {action_taken}"),
+                &format!(
+                    "Your listing \"{}\" has been {} by admin.",
+                    property_title, action_taken
+                ),
+                Some(&action_url),
+                json!({
+                    "propertyId": property_id,
+                    "actionTaken": action_taken,
+                    "reviewReason": review_reason,
+                    "reviewedBy": user.id,
+                }),
+            )
+            .await?;
+
+            let email = state.mail_service.property_moderation_email(
+                recipient.email.clone(),
+                &recipient.full_name,
+                &property_title,
+                &property_location,
+                action_taken,
+                review_reason,
+                &format!("https://verinest.ng{}", action_url),
+                &header_image_url,
+            );
+            let _ = state.mail_service.send(email).await;
+        }
+    }
+
+    Ok(Json(json!({
+        "success": true,
+        "message": format!("Property {action_taken} successfully"),
+        "property": {
+            "id": property_id,
+            "status": new_status,
+        }
+    })))
 }
 
 pub async fn delete_admin_property(
@@ -5009,7 +5243,7 @@ async fn fetch_role_profile(pool: &PgPool, user: &User) -> Result<Option<Value>,
             .fetch_optional(pool)
             .await?
         }
-        UserRole::Admin => None,
+        UserRole::Admin | UserRole::SuperAdmin => None,
     };
     Ok(value)
 }
@@ -5196,8 +5430,15 @@ fn ensure_landlord(user: &User) -> Result<(), AppError> {
 }
 
 fn ensure_admin(user: &User) -> Result<(), AppError> {
-    if user.role != UserRole::Admin {
+    if !matches!(user.role, UserRole::Admin | UserRole::SuperAdmin) {
         return Err(AppError::forbidden("only admins can access this endpoint"));
+    }
+    Ok(())
+}
+
+fn ensure_superadmin(user: &User) -> Result<(), AppError> {
+    if user.role != UserRole::SuperAdmin {
+        return Err(AppError::forbidden("only superadmins can access this endpoint"));
     }
     Ok(())
 }
@@ -5215,7 +5456,7 @@ fn announcement_audiences_for_role(role: UserRole) -> Vec<String> {
             "landlords".to_string(),
             "providers".to_string(),
         ],
-        UserRole::Admin => vec![
+        UserRole::Admin | UserRole::SuperAdmin => vec![
             "all".to_string(),
             "seekers".to_string(),
             "agents".to_string(),

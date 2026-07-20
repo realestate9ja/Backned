@@ -97,7 +97,7 @@ impl PropertyService {
                 Some(actor.id),
                 false,
                 None,
-                crate::domain::properties::PropertyStatus::Published,
+                crate::domain::properties::PropertyStatus::PendingVerification,
             ),
             UserRole::Landlord => {
                 let requested_agent_id = input.requested_agent_id;
@@ -140,7 +140,7 @@ impl PropertyService {
                 None,
                 crate::domain::properties::PropertyStatus::Draft,
             ),
-            UserRole::Admin => (
+            UserRole::Admin | UserRole::SuperAdmin => (
                 None,
                 false,
                 None,
@@ -243,7 +243,7 @@ impl PropertyService {
             self.cache.invalidate_namespace("properties:list").await?;
 
             let visibility = match user.role {
-                UserRole::Agent | UserRole::Landlord | UserRole::Admin => "privileged",
+                UserRole::Agent | UserRole::Landlord | UserRole::Admin | UserRole::SuperAdmin => "privileged",
                 UserRole::Unassigned | UserRole::Seeker => "restricted",
             };
             let cache_key = self

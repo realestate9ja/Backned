@@ -17,6 +17,7 @@ pub enum UserRole {
     Agent,
     Landlord,
     Admin,
+    SuperAdmin,
 }
 
 impl UserRole {
@@ -25,7 +26,11 @@ impl UserRole {
     }
 
     pub fn can_moderate(self) -> bool {
-        matches!(self, Self::Admin)
+        matches!(self, Self::Admin | Self::SuperAdmin)
+    }
+
+    pub fn can_assign_roles(self) -> bool {
+        matches!(self, Self::SuperAdmin)
     }
 
     pub fn as_str(self) -> &'static str {
@@ -35,6 +40,7 @@ impl UserRole {
             Self::Agent => "agent",
             Self::Landlord => "landlord",
             Self::Admin => "admin",
+            Self::SuperAdmin => "super_admin",
         }
     }
 }
@@ -148,6 +154,12 @@ pub struct BootstrapAdminInput {
     pub full_name: String,
     pub email: String,
     pub password: String,
+    #[serde(default = "default_bootstrap_role")]
+    pub role: UserRole,
+}
+
+fn default_bootstrap_role() -> UserRole {
+    UserRole::Admin
 }
 
 #[derive(Debug, Deserialize)]

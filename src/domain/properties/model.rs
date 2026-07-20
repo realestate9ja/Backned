@@ -12,6 +12,7 @@ pub enum PropertyStatus {
     PendingVerification,
     Verified,
     Published,
+    Rejected,
     Hidden,
     Suspended,
     RentedOut,
@@ -76,6 +77,12 @@ pub struct Property {
     pub status: PropertyStatus,
     pub verified_by: Option<Uuid>,
     pub verified_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub reviewed_by: Option<Uuid>,
+    #[sqlx(default)]
+    pub reviewed_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub review_notes: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -109,6 +116,12 @@ pub struct PropertyListItem {
     pub agent_phone: Option<String>,
     pub created_at: DateTime<Utc>,
     pub verified_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub reviewed_by: Option<Uuid>,
+    #[sqlx(default)]
+    pub reviewed_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub review_notes: Option<String>,
     #[sqlx(default)]
     pub view_count: i64,
     #[sqlx(default)]
@@ -169,6 +182,12 @@ pub struct PropertyDetail {
     pub contact_phone: Option<String>,
     pub verified_by: Option<Uuid>,
     pub verified_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub reviewed_by: Option<Uuid>,
+    #[sqlx(default)]
+    pub reviewed_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub review_notes: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     #[sqlx(default)]
