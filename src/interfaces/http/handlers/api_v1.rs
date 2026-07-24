@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::infrastructure::auth::PasswordService;
 use crate::infrastructure::email::service::{
     header_asset_url, kyc_header_asset, HEADER_LEAD_ALERT, HEADER_NEW_MATCH,
-    HEADER_SECURITY_DARK,
+    HEADER_SECURITY_DARK, OutboundEmail,
 };
 use crate::application::services::{AuditActor, AuditEvent};
 
@@ -4515,11 +4515,36 @@ pub async fn superadmin_assign_role(
     }
 
     // Update the role
-    let _updated = state
+    let updated = state
         .user_repository
         .update_role(target_user_id, payload.role)
         .await?
         .ok_or_else(|| AppError::not_found("user not found"))?;
+
+    // Send notification email if role changed to Admin
+    if payload.role == UserRole::Admin {
+        let subject = "Welcome to the Verinest Admin Team";
+        let html = format!(
+            "<p>Hi {},</p>\
+             <p>You have been promoted to Admin role on Verinest!</p>\
+             <p>You can now access and manage the admin dashboard.</p>\
+             <p>If you have any questions, please contact our support team.</p>\
+             <p>Best regards,<br>The Verinest Team</p>",
+            updated.full_name
+        );
+        let text = format!(
+            "Hi {},\n\nYou have been promoted to Admin role on Verinest!\n\nYou can now access and manage the admin dashboard.\n\nIf you have any questions, please contact our support team.\n\nBest regards,\nThe Verinest Team",
+            updated.full_name
+        );
+        let email = OutboundEmail {
+            to: updated.email.clone(),
+            subject: subject.to_string(),
+            html,
+            text,
+        };
+        // Send email but don't fail the request if it doesn't work
+        let _ = state.mail_service.send(email).await;
+    }
 
     Ok(Json(serde_json::json!({
         "success": true,

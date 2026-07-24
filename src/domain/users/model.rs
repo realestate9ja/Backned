@@ -159,7 +159,7 @@ pub struct BootstrapAdminInput {
 }
 
 fn default_bootstrap_role() -> UserRole {
-    UserRole::Admin
+    UserRole::SuperAdmin
 }
 
 #[derive(Debug, Deserialize)]
