@@ -13,6 +13,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::infrastructure::email::service::{header_asset_url, HEADER_SECURITY_DARK};
+use crate::infrastructure::email::OutboundEmail;
 
 use crate::{
     domain::users::{LoginInput, RegisterUserInput, User, UserRole, VerifyEmailInput, 
@@ -113,7 +114,7 @@ fn require_user(user: Option<User>) -> Result<User, AppError> {
 }
 
 fn require_admin(user: &User) -> Result<(), AppError> {
-    if user.role != UserRole::Admin {
+    if !matches!(user.role, UserRole::Admin | UserRole::SuperAdmin) {
         return Err(AppError::forbidden("admin access required"));
     }
     Ok(())
@@ -221,6 +222,28 @@ async fn create_notification(
         .execute(pool)
         .await?;
     Ok(())
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct VerificationReviewerRow {
+    id: Uuid,
+    email: String,
+    full_name: String,
+}
+
+async fn verification_review_recipients(pool: &PgPool) -> Result<Vec<VerificationReviewerRow>, AppError> {
+    let rows = sqlx::query_as::<_, VerificationReviewerRow>(
+        r#"
+        SELECT id, email, full_name
+        FROM users
+        WHERE role IN ('admin', 'super_admin')
+          AND email_verified = TRUE
+        ORDER BY created_at ASC
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
 }
 
 async fn wallet_summary(pool: &PgPool, user_id: Uuid) -> Result<Value, AppError> {
@@ -860,6 +883,56 @@ pub async fn dispatch(
                 json!({}),
             )
             .await?;
+
+            let reviewers = verification_review_recipients(&state.pool).await?;
+            if !reviewers.is_empty() {
+                let dashboard_url = format!("{}/admin/verifications", PUBLIC_APP_BASE_URL);
+                let email_body = format!(
+                    "A new verification request from {} ({}) has been submitted and is waiting for review.",
+                    user.full_name, user.email
+                );
+                let cta = format!(
+                    r#"<div style="margin:28px 0;text-align:center;"><a href="{dashboard_url}" style="display:inline-block;background:#C4714A;color:#FFFFFF;text-decoration:none;font-size:13px;font-weight:600;padding:15px 28px;border-radius:12px;width:100%;text-align:center;box-sizing:border-box;">Review verification request →</a></div>"#
+                );
+
+                for reviewer in reviewers {
+                    create_notification(
+                        &state.pool,
+                        reviewer.id,
+                        "verification_submitted",
+                        "New verification request",
+                        &format!(
+                            "{} ({}) submitted a verification request for review.",
+                            user.full_name, user.email
+                        ),
+                        json!({
+                            "userId": user.id,
+                            "userName": user.full_name,
+                            "userEmail": user.email,
+                            "verificationStatus": "submitted",
+                            "actionUrl": "/admin/verifications",
+                        }),
+                    )
+                    .await?;
+
+                    let html = state.mail_service.build_email_template_no_header(
+                        &format!("Hi {},", reviewer.full_name),
+                        &email_body,
+                        Some(&cta),
+                        Some("This alert was sent to every admin and super admin so the review queue is visible immediately."),
+                    );
+                    let email = OutboundEmail {
+                        to: reviewer.email,
+                        subject: "Verinest: new verification request awaiting review".to_string(),
+                        text: format!(
+                            "Hi {}, a new verification request from {} ({}) is waiting for review: {}",
+                            reviewer.full_name, user.full_name, user.email, dashboard_url
+                        ),
+                        html,
+                    };
+                    let _ = state.mail_service.send(email).await;
+                }
+            }
             return Ok(ok(json!({"verification_status": "submitted"})));
         }
         ("GET", ["verification", "complete-status"]) => {

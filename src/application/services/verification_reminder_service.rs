@@ -109,7 +109,7 @@ impl VerificationReminderService {
             r#"
             SELECT full_name, email
             FROM users
-            WHERE role = 'admin'
+            WHERE role IN ('admin', 'super_admin')
               AND email_verified = TRUE
             ORDER BY created_at ASC
             "#,

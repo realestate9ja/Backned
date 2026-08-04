@@ -7,6 +7,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::{FromRow, PgPool, Row};
+use tokio::sync::OnceCell;
 use uuid::Uuid;
 
 use crate::infrastructure::auth::PasswordService;
@@ -276,17 +277,25 @@ pub struct AdminReviewPropertyInput {
     pub review_notes: Option<String>,
 }
 
+static PROPERTY_REVIEW_COLUMNS_READY: OnceCell<()> = OnceCell::const_new();
+
 async fn ensure_property_review_columns(pool: &sqlx::PgPool) -> Result<(), AppError> {
-    sqlx::query(
-        r#"
-        ALTER TABLE properties
-            ADD COLUMN IF NOT EXISTS reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
-            ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ,
-            ADD COLUMN IF NOT EXISTS review_notes TEXT
-        "#,
-    )
-    .execute(pool)
-    .await?;
+    PROPERTY_REVIEW_COLUMNS_READY
+        .get_or_try_init(|| async {
+            sqlx::query(
+                r#"
+                ALTER TABLE properties
+                    ADD COLUMN IF NOT EXISTS reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
+                    ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ,
+                    ADD COLUMN IF NOT EXISTS review_notes TEXT
+                "#,
+            )
+            .execute(pool)
+            .await
+            .map_err(|error| AppError::internal(error.to_string()))?;
+            Ok::<(), AppError>(())
+        })
+        .await?;
     Ok(())
 }
 
@@ -4021,6 +4030,13 @@ pub async fn update_agent_property(
         .status
         .as_ref()
         .map(|value| value.trim().to_lowercase());
+    let should_submit_for_review = requested_status.as_deref() == Some("published")
+        && matches!(
+            current.status,
+            crate::domain::properties::PropertyStatus::Draft
+                | crate::domain::properties::PropertyStatus::Hidden
+                | crate::domain::properties::PropertyStatus::Rejected
+        );
 
     if let Some(locked_until) = current.status_locked_until {
         if locked_until > Utc::now() {
@@ -4103,6 +4119,11 @@ pub async fn update_agent_property(
     let mut price_change_pending = false;
     let mut saved_fields = vec![];
     let mut message = String::new();
+    let mut effective_status = payload.status.clone();
+    if should_submit_for_review {
+        effective_status = Some("pending_verification".to_string());
+        message = "Your listing has been submitted for review and will be published after admin approval.".to_string();
+    }
 
     if requested_price.is_some() && new_price < MIN_PROPERTY_PRICE && new_price != old_price {
         return Err(AppError::bad_request("price must be at least NGN 50,000"));
@@ -4117,7 +4138,7 @@ pub async fn update_agent_property(
         let contact_name = payload.contact_name.clone();
         let contact_phone = payload.contact_phone.clone();
         let listing_type = payload.listing_type.clone();
-        let status = payload.status.clone();
+        let status = effective_status.clone();
         sqlx::query(
             r#"
             UPDATE properties
@@ -4179,7 +4200,7 @@ pub async fn update_agent_property(
         let contact_name = payload.contact_name.clone();
         let contact_phone = payload.contact_phone.clone();
         let listing_type = payload.listing_type.clone();
-        let status = payload.status.clone();
+        let status = effective_status.clone();
         sqlx::query(
             r#"
             UPDATE properties
@@ -4211,7 +4232,11 @@ pub async fn update_agent_property(
         .bind(&status)
         .execute(&state.pool)
         .await?;
-        message = "Property updated successfully.".to_string();
+        if should_submit_for_review {
+            message = "Your listing has been submitted for review and will be published after admin approval.".to_string();
+        } else {
+            message = "Property updated successfully.".to_string();
+        }
         saved_fields = vec!["title","description","price","location","exact_address","images","contact_name","contact_phone","listing_type","status"];
     }
 
@@ -4582,7 +4607,7 @@ pub async fn list_admin_properties(
                 p.reviewed_at,
                 p.review_notes,
                 p.reviewed_by,
-                p.created_at + INTERVAL '48 hours' AS review_due_at,
+                GREATEST(p.created_at, p.updated_at) + INTERVAL '48 hours' AS review_due_at,
                 p.is_service_apartment,
                 p.listing_type,
                 owner.full_name AS owner_name,
@@ -4624,6 +4649,118 @@ pub async fn list_admin_properties(
         page: pagination.page(),
         per_page: pagination.per_page(),
     }))
+}
+
+pub async fn admin_unpublish_property(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Path(property_id): Path<Uuid>,
+) -> Result<Json<Value>, AppError> {
+    ensure_admin(&user)?;
+
+    let current = sqlx::query(
+        r#"
+        SELECT
+            p.id,
+            p.title,
+            p.location,
+            p.status::text AS status,
+            p.owner_id,
+            p.agent_id,
+            owner.full_name AS owner_name,
+            owner.email AS owner_email,
+            agent.full_name AS agent_name,
+            agent.email AS agent_email
+        FROM properties p
+        INNER JOIN users owner ON owner.id = p.owner_id
+        LEFT JOIN users agent ON agent.id = p.agent_id
+        WHERE p.id = $1
+        "#,
+    )
+    .bind(property_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::not_found("property not found"))?;
+
+    let current_status: String = current.get("status");
+    if !matches!(current_status.as_str(), "published" | "verified" | "hidden") {
+        return Err(AppError::bad_request(
+            "only published or visible listings can be unpublished",
+        ));
+    }
+
+    let updated = sqlx::query(
+        r#"
+        UPDATE properties
+        SET status = 'draft',
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING id, title, location, owner_id, agent_id
+        "#,
+    )
+    .bind(property_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::not_found("property not found"))?;
+
+    let property_title: String = updated.get("title");
+    let property_location: String = updated.get("location");
+    let owner_id: Uuid = updated.get("owner_id");
+    let agent_id: Option<Uuid> = updated.get("agent_id");
+
+    let mut recipients = vec![owner_id];
+    if let Some(agent_id) = agent_id {
+        if agent_id != owner_id {
+            recipients.push(agent_id);
+        }
+    }
+
+    let action_url = format!("/provider/listings/{property_id}");
+    let header_image_url = header_asset_url(HEADER_SECURITY_DARK);
+
+    for recipient_id in recipients {
+        if let Some(recipient) = state.user_repository.find_by_id(recipient_id).await? {
+            insert_notification(
+                &state.pool,
+                recipient.id,
+                "property_review",
+                "Property moved back to draft",
+                &format!(
+                    "Your listing \"{}\" has been unpublished by admin and moved back to draft. Please review it and republish once ready.",
+                    property_title
+                ),
+                Some(&action_url),
+                json!({
+                    "propertyId": property_id,
+                    "actionTaken": "unpublished",
+                    "reviewReason": "Admin unpublished the listing and returned it to draft.",
+                    "reviewedBy": user.id,
+                }),
+            )
+            .await?;
+
+            let email = state.mail_service.property_moderation_email(
+                recipient.email.clone(),
+                &recipient.full_name,
+                &property_title,
+                &property_location,
+                "unpublished and moved back to draft",
+                "Please review the listing, make any needed updates, and republish it when ready.",
+                &format!("https://verinest.ng{}", action_url),
+                &header_image_url,
+            );
+            let _ = state.mail_service.send(email).await;
+        }
+    }
+
+    Ok(Json(json!({
+        "success": true,
+        "message": "Property unpublished and moved back to draft",
+        "property": {
+            "id": property_id,
+            "status": "draft"
+        }
+    })))
 }
 
 pub async fn review_admin_property(
