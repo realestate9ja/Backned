@@ -29,7 +29,7 @@ pub fn create_router(state: AppState) -> Router {
         .allow_origin([
             "http://localhost:3001".parse().unwrap(),
             "http://localhost:8080".parse().unwrap(),
-            "https://verinestdemo.vercel.app".parse().unwrap(),
+            "https://ver1nest.vercel.app".parse().unwrap(),
             "https://verinest.ng".parse().unwrap(),
             "https://www.verinest.ng".parse().unwrap(),
             "https://verinest.vercel.app".parse().unwrap(),
