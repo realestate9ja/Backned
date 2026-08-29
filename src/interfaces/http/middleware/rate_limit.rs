@@ -1,9 +1,4 @@
-use axum::{
-    extract::State,
-    http::Request,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::State, http::Request, middleware::Next, response::Response};
 
 use crate::{
     infrastructure::rate_limit::RateLimitScope,
@@ -50,7 +45,12 @@ async fn check_limit(
         })
         .unwrap_or("anonymous");
     let key = format!("{ip}:{path}");
-    if !state.rate_limiter.check(scope, &key).await {
+    if !state
+        .rate_limiter
+        .check(scope, &key)
+        .await
+        .map_err(|error| AppError::internal(error.to_string()))?
+    {
         return Err(AppError::too_many_requests("rate limit exceeded"));
     }
 

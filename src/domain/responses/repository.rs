@@ -1,8 +1,8 @@
 use crate::domain::{
     properties::PropertyListItem,
     responses::{
-        CreateResponseInput, PostResponseItem, PostResponseWithProperties, Response, ResponseContext,
-        ResponseCreated,
+        CreateResponseInput, PostResponseItem, PostResponseWithProperties, Response,
+        ResponseContext, ResponseCreated,
     },
 };
 use anyhow::Result;
@@ -24,7 +24,12 @@ struct ResponsePropertyRow {
     location: String,
     description: String,
     images: Vec<String>,
+    bedrooms: i32,
+    bathrooms: i32,
+    bedrooms_label: Option<String>,
+    property_category: Option<String>,
     is_service_apartment: bool,
+    listing_type: String,
     status: crate::domain::properties::PropertyStatus,
     self_managed: bool,
     owner_id: Uuid,
@@ -81,7 +86,10 @@ impl ResponseRepository {
         })
     }
 
-    pub async fn list_with_properties_for_post(&self, post_id: Uuid) -> Result<Vec<PostResponseWithProperties>> {
+    pub async fn list_with_properties_for_post(
+        &self,
+        post_id: Uuid,
+    ) -> Result<Vec<PostResponseWithProperties>> {
         let items = sqlx::query_as::<_, PostResponseItem>(
             r#"
             SELECT
@@ -101,7 +109,10 @@ impl ResponseRepository {
         .fetch_all(&self.pool)
         .await?;
 
-        let response_ids = items.iter().map(|item| item.response_id).collect::<Vec<_>>();
+        let response_ids = items
+            .iter()
+            .map(|item| item.response_id)
+            .collect::<Vec<_>>();
         let properties = self.properties_for_response_ids(&response_ids).await?;
 
         Ok(items
@@ -113,7 +124,10 @@ impl ResponseRepository {
                 responder_name: item.responder_name,
                 responder_role: item.responder_role,
                 message: item.message,
-                properties: properties.get(&item.response_id).cloned().unwrap_or_default(),
+                properties: properties
+                    .get(&item.response_id)
+                    .cloned()
+                    .unwrap_or_default(),
                 created_at: item.created_at,
             })
             .collect())
@@ -155,7 +169,12 @@ impl ResponseRepository {
                 p.location,
                 p.description,
                 p.images,
+                p.bedrooms,
+                p.bathrooms,
+                p.bedrooms_label,
+                p.property_category,
                 p.is_service_apartment,
+                p.listing_type,
                 p.status,
                 p.self_managed,
                 p.owner_id,
@@ -178,23 +197,42 @@ impl ResponseRepository {
 
         let mut grouped: HashMap<Uuid, Vec<PropertyListItem>> = HashMap::new();
         for row in rows {
-            grouped.entry(row.response_id).or_default().push(PropertyListItem {
-                id: row.id,
-                title: row.title,
-                price: row.price,
-                location: row.location,
-                description: row.description,
-                images: row.images,
-                is_service_apartment: row.is_service_apartment,
-                status: row.status,
-                self_managed: row.self_managed,
-                owner_id: row.owner_id,
-                agent_id: row.agent_id,
-                owner_name: row.owner_name,
-                agent_name: row.agent_name,
-                created_at: row.created_at,
-                verified_at: row.verified_at,
-            });
+            grouped
+                .entry(row.response_id)
+                .or_default()
+                    .push(PropertyListItem {
+                        id: row.id,
+                        title: row.title,
+                        price: row.price,
+                        location: row.location,
+                        description: row.description,
+                        images: row.images,
+                        bedrooms: row.bedrooms,
+                        bathrooms: row.bathrooms,
+                        bedrooms_label: row.bedrooms_label,
+                        property_category: row.property_category,
+                        is_service_apartment: row.is_service_apartment,
+                        listing_type: row.listing_type,
+                        status: row.status,
+                        reviewed_by: None,
+                        reviewed_at: None,
+                        review_notes: None,
+                        self_managed: row.self_managed,
+                        owner_id: row.owner_id,
+                        agent_id: row.agent_id,
+                        owner_name: row.owner_name,
+                        agent_name: row.agent_name,
+                        owner_phone: None,
+                        agent_phone: None,
+                        created_at: row.created_at,
+                        verified_at: row.verified_at,
+                        view_count: 0,
+                        offer_count: 0,
+                        pending_price_request_id: None,
+                        pending_requested_price: None,
+                        pending_price_requested_at: None,
+                        status_locked_until: None,
+                    });
         }
 
         Ok(grouped)

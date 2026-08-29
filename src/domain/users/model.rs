@@ -4,8 +4,7 @@ use sqlx::FromRow;
 use uuid::Uuid;
 
 use crate::domain::{
-    notifications::AgentPostNotificationItem,
-    properties::PropertyListItem,
+    notifications::AgentPostNotificationItem, properties::PropertyListItem,
     responses::SeekerActiveRequest,
 };
 
@@ -18,6 +17,7 @@ pub enum UserRole {
     Agent,
     Landlord,
     Admin,
+    SuperAdmin,
 }
 
 impl UserRole {
@@ -26,7 +26,11 @@ impl UserRole {
     }
 
     pub fn can_moderate(self) -> bool {
-        matches!(self, Self::Admin)
+        matches!(self, Self::Admin | Self::SuperAdmin)
+    }
+
+    pub fn can_assign_roles(self) -> bool {
+        matches!(self, Self::SuperAdmin)
     }
 
     pub fn as_str(self) -> &'static str {
@@ -36,6 +40,7 @@ impl UserRole {
             Self::Agent => "agent",
             Self::Landlord => "landlord",
             Self::Admin => "admin",
+            Self::SuperAdmin => "super_admin",
         }
     }
 }
@@ -69,6 +74,20 @@ impl User {
     pub fn role_label(&self) -> &'static str {
         self.role.as_str()
     }
+
+    pub fn verification_status_normalized(&self) -> &'static str {
+        match self.verification_status.trim().to_lowercase().as_str() {
+            "approved" | "verified" => "approved",
+            "pending" | "submitted" | "in_review" => "pending",
+            "rejected" => "rejected",
+            "not_required" => "not_required",
+            _ => "pending",
+        }
+    }
+
+    pub fn is_verification_approved(&self) -> bool {
+        matches!(self.verification_status_normalized(), "approved")
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -78,6 +97,8 @@ pub struct UserPublicView {
     pub email: String,
     pub email_verified: bool,
     pub role: UserRole,
+    pub phone: Option<String>,
+    pub avatar_url: Option<String>,
     pub bio: Option<String>,
     pub average_rating: Option<f64>,
     pub review_count: i64,
@@ -107,6 +128,8 @@ impl From<User> for UserPublicView {
             email: user.email,
             email_verified: user.email_verified,
             role: user.role,
+            phone: user.phone,
+            avatar_url: None,
             bio: user.bio,
             average_rating: None,
             review_count: 0,
@@ -131,6 +154,12 @@ pub struct BootstrapAdminInput {
     pub full_name: String,
     pub email: String,
     pub password: String,
+    #[serde(default = "default_bootstrap_role")]
+    pub role: UserRole,
+}
+
+fn default_bootstrap_role() -> UserRole {
+    UserRole::SuperAdmin
 }
 
 #[derive(Debug, Deserialize)]
@@ -156,11 +185,23 @@ pub struct VerifyEmailCodeInput {
     pub code: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SendPasswordResetInput {
+    pub email: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResetPasswordInput {
+    pub token: String,
+    pub password: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct AuthResponse {
     pub token: String,
     pub refresh_token: String,
     pub user: UserPublicView,
+    pub csrf_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -186,6 +227,8 @@ pub struct AgentNotificationSettingsView {
 #[derive(Debug, Clone, FromRow)]
 pub struct AgentNotificationRecipient {
     pub id: Uuid,
+    pub full_name: String,
+    pub email: String,
     pub operating_city: String,
     pub operating_state: String,
 }

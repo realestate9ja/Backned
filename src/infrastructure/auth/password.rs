@@ -1,7 +1,7 @@
 use anyhow::Context;
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 
 #[derive(Clone, Default)]
@@ -25,4 +25,3 @@ impl PasswordService {
             .is_ok())
     }
 }
-

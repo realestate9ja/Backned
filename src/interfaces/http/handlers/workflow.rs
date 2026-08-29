@@ -1,7 +1,7 @@
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
-    Json,
 };
 use uuid::Uuid;
 
@@ -11,11 +11,7 @@ use crate::{
         CreatePropertyAgentRequestInput, CreateSiteVisitInput, CreateThreadMessageInput,
         UpdateLiveVideoSessionInput, UpdateSiteVisitInput,
     },
-    interfaces::http::{
-        errors::AppError,
-        middleware::auth::AuthUser,
-        state::AppState,
-    },
+    interfaces::http::{errors::AppError, middleware::auth::AuthUser, state::AppState},
 };
 
 pub async fn add_thread_message(
@@ -36,7 +32,10 @@ pub async fn get_thread(
     AuthUser(user): AuthUser,
     Path(response_id): Path<Uuid>,
 ) -> Result<Json<crate::domain::workflow::RequestThreadView>, AppError> {
-    let thread = state.workflow_use_cases.get_thread(&user, response_id).await?;
+    let thread = state
+        .workflow_use_cases
+        .get_thread(&user, response_id)
+        .await?;
     Ok(Json(thread))
 }
 
@@ -122,7 +121,13 @@ pub async fn create_property_agent_request(
     AuthUser(user): AuthUser,
     Path(property_id): Path<Uuid>,
     Json(payload): Json<CreatePropertyAgentRequestInput>,
-) -> Result<(StatusCode, Json<crate::domain::workflow::PropertyAgentRequest>), AppError> {
+) -> Result<
+    (
+        StatusCode,
+        Json<crate::domain::workflow::PropertyAgentRequest>,
+    ),
+    AppError,
+> {
     let request = state
         .workflow_use_cases
         .create_property_agent_request(&user, property_id, payload)
@@ -148,7 +153,10 @@ pub async fn verify_property(
     AuthUser(user): AuthUser,
     Path(property_id): Path<Uuid>,
 ) -> Result<Json<crate::domain::properties::PropertyDetail>, AppError> {
-    let property = state.workflow_use_cases.verify_property(&user, property_id).await?;
+    let property = state
+        .workflow_use_cases
+        .verify_property(&user, property_id)
+        .await?;
     Ok(Json(property))
 }
 
@@ -157,6 +165,9 @@ pub async fn publish_property(
     AuthUser(user): AuthUser,
     Path(property_id): Path<Uuid>,
 ) -> Result<Json<crate::domain::properties::PropertyDetail>, AppError> {
-    let property = state.workflow_use_cases.publish_property(&user, property_id).await?;
+    let property = state
+        .workflow_use_cases
+        .publish_property(&user, property_id)
+        .await?;
     Ok(Json(property))
 }

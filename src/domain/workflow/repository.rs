@@ -8,8 +8,8 @@ use uuid::Uuid;
 use crate::domain::{
     properties::PropertyListItem,
     workflow::{
-        LiveVideoSession, PropertyAgentRequest, RequestThread, RequestThreadView, ResponseWorkflowContext,
-        SiteVisit, SiteVisitCertification, SiteVisitView, ThreadMessage,
+        LiveVideoSession, PropertyAgentRequest, RequestThread, RequestThreadView,
+        ResponseWorkflowContext, SiteVisit, SiteVisitCertification, SiteVisitView, ThreadMessage,
     },
 };
 
@@ -23,7 +23,10 @@ impl WorkflowRepository {
         Self { pool }
     }
 
-    pub async fn response_context(&self, response_id: Uuid) -> Result<Option<ResponseWorkflowContext>> {
+    pub async fn response_context(
+        &self,
+        response_id: Uuid,
+    ) -> Result<Option<ResponseWorkflowContext>> {
         #[derive(sqlx::FromRow)]
         struct Row {
             response_id: Uuid,
@@ -56,7 +59,10 @@ impl WorkflowRepository {
         }))
     }
 
-    pub async fn get_or_create_thread(&self, context: &ResponseWorkflowContext) -> Result<RequestThread> {
+    pub async fn get_or_create_thread(
+        &self,
+        context: &ResponseWorkflowContext,
+    ) -> Result<RequestThread> {
         if let Some(thread) = self.find_thread_by_response_id(context.response_id).await? {
             return Ok(thread);
         }
@@ -81,7 +87,10 @@ impl WorkflowRepository {
         Ok(thread)
     }
 
-    pub async fn find_thread_by_response_id(&self, response_id: Uuid) -> Result<Option<RequestThread>> {
+    pub async fn find_thread_by_response_id(
+        &self,
+        response_id: Uuid,
+    ) -> Result<Option<RequestThread>> {
         let thread = sqlx::query_as::<_, RequestThread>(
             r#"
             SELECT id, response_id, post_id, buyer_id, agent_id, status, last_message_at, created_at, updated_at
@@ -96,7 +105,12 @@ impl WorkflowRepository {
         Ok(thread)
     }
 
-    pub async fn add_thread_message(&self, thread_id: Uuid, sender_id: Uuid, message: &str) -> Result<ThreadMessage> {
+    pub async fn add_thread_message(
+        &self,
+        thread_id: Uuid,
+        sender_id: Uuid,
+        message: &str,
+    ) -> Result<ThreadMessage> {
         let message_id = Uuid::new_v4();
 
         sqlx::query(
@@ -148,7 +162,11 @@ impl WorkflowRepository {
         Ok(Some(RequestThreadView { thread, messages }))
     }
 
-    pub async fn list_threads_for_user(&self, user_id: Uuid, limit: i64) -> Result<Vec<RequestThread>> {
+    pub async fn list_threads_for_user(
+        &self,
+        user_id: Uuid,
+        limit: i64,
+    ) -> Result<Vec<RequestThread>> {
         let items = sqlx::query_as::<_, RequestThread>(
             r#"
             SELECT id, response_id, post_id, buyer_id, agent_id, status, last_message_at, created_at, updated_at
@@ -236,7 +254,10 @@ impl WorkflowRepository {
         Ok(item)
     }
 
-    pub async fn find_live_video_session(&self, session_id: Uuid) -> Result<Option<LiveVideoSession>> {
+    pub async fn find_live_video_session(
+        &self,
+        session_id: Uuid,
+    ) -> Result<Option<LiveVideoSession>> {
         let item = sqlx::query_as::<_, LiveVideoSession>(
             r#"
             SELECT
@@ -253,7 +274,11 @@ impl WorkflowRepository {
         Ok(item)
     }
 
-    pub async fn list_live_video_sessions_for_user(&self, user_id: Uuid, limit: i64) -> Result<Vec<LiveVideoSession>> {
+    pub async fn list_live_video_sessions_for_user(
+        &self,
+        user_id: Uuid,
+        limit: i64,
+    ) -> Result<Vec<LiveVideoSession>> {
         let items = sqlx::query_as::<_, LiveVideoSession>(
             r#"
             SELECT
@@ -421,7 +446,11 @@ impl WorkflowRepository {
         }))
     }
 
-    pub async fn list_site_visit_views_for_user(&self, user_id: Uuid, limit: i64) -> Result<Vec<SiteVisitView>> {
+    pub async fn list_site_visit_views_for_user(
+        &self,
+        user_id: Uuid,
+        limit: i64,
+    ) -> Result<Vec<SiteVisitView>> {
         let visits = sqlx::query_as::<_, SiteVisit>(
             r#"
             SELECT
@@ -438,9 +467,15 @@ impl WorkflowRepository {
         .fetch_all(&self.pool)
         .await?;
 
-        let property_ids = visits.iter().map(|visit| visit.property_id).collect::<Vec<_>>();
+        let property_ids = visits
+            .iter()
+            .map(|visit| visit.property_id)
+            .collect::<Vec<_>>();
         let properties = self.property_list_items(&property_ids).await?;
-        let property_map = properties.into_iter().map(|item| (item.id, item)).collect::<HashMap<_, _>>();
+        let property_map = properties
+            .into_iter()
+            .map(|item| (item.id, item))
+            .collect::<HashMap<_, _>>();
 
         let visit_ids = visits.iter().map(|visit| visit.id).collect::<Vec<_>>();
         let certifications = if visit_ids.is_empty() {
@@ -465,11 +500,14 @@ impl WorkflowRepository {
         Ok(visits
             .into_iter()
             .filter_map(|site_visit| {
-                property_map.get(&site_visit.property_id).cloned().map(|property| SiteVisitView {
-                    certification: certification_map.get(&site_visit.id).cloned(),
-                    site_visit,
-                    property,
-                })
+                property_map
+                    .get(&site_visit.property_id)
+                    .cloned()
+                    .map(|property| SiteVisitView {
+                        certification: certification_map.get(&site_visit.id).cloned(),
+                        site_visit,
+                        property,
+                    })
             })
             .collect())
     }
@@ -508,7 +546,10 @@ impl WorkflowRepository {
         Ok(item)
     }
 
-    pub async fn find_property_agent_request(&self, property_id: Uuid) -> Result<Option<PropertyAgentRequest>> {
+    pub async fn find_property_agent_request(
+        &self,
+        property_id: Uuid,
+    ) -> Result<Option<PropertyAgentRequest>> {
         let item = sqlx::query_as::<_, PropertyAgentRequest>(
             r#"
             SELECT
@@ -539,7 +580,11 @@ impl WorkflowRepository {
         Ok(())
     }
 
-    pub async fn is_property_linked_to_response(&self, response_id: Uuid, property_id: Uuid) -> Result<bool> {
+    pub async fn is_property_linked_to_response(
+        &self,
+        response_id: Uuid,
+        property_id: Uuid,
+    ) -> Result<bool> {
         let exists = sqlx::query_scalar::<_, bool>(
             r#"
             SELECT EXISTS(

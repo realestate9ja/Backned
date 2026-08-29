@@ -33,7 +33,12 @@ struct LiveKitVideoGrant {
 }
 
 impl LiveKitService {
-    pub fn new(server_url: String, api_key: String, api_secret: String, token_ttl_minutes: i64) -> Self {
+    pub fn new(
+        server_url: String,
+        api_key: String,
+        api_secret: String,
+        token_ttl_minutes: i64,
+    ) -> Self {
         Self {
             server_url,
             api_key,
@@ -75,6 +80,7 @@ impl LiveKitService {
             },
         };
 
-        encode(&Header::default(), &claims, &self.encoding_key).context("failed to sign livekit token")
+        encode(&Header::default(), &claims, &self.encoding_key)
+            .context("failed to sign livekit token")
     }
 }

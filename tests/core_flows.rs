@@ -402,8 +402,9 @@ async fn login_creates_email_verification_token_and_verify_endpoint_marks_user_v
     .await;
     assert_eq!(login.0, StatusCode::OK);
 
-    let database_url = std::env::var("TEST_DATABASE_URL")
-        .unwrap_or_else(|_| "postgresql://verinest:verinest@127.0.0.1:55432/verinest_test".to_string());
+    let database_url = std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
+        "postgresql://verinest:verinest@127.0.0.1:55432/verinest_test".to_string()
+    });
     let pool = create_pool(&database_url, 1).await.expect("db pool");
     let token: String = sqlx::query_scalar(
         r#"
@@ -479,8 +480,9 @@ async fn api_v1_unassigned_onboarding_and_role_surfaces_work() {
     .await;
     assert_eq!(send_code.0, StatusCode::OK);
 
-    let database_url = std::env::var("TEST_DATABASE_URL")
-        .unwrap_or_else(|_| "postgresql://verinest:verinest@127.0.0.1:55432/verinest_test".to_string());
+    let database_url = std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
+        "postgresql://verinest:verinest@127.0.0.1:55432/verinest_test".to_string()
+    });
     let pool = create_pool(&database_url, 1).await.expect("db pool");
     let code: String = sqlx::query_scalar(
         r#"
@@ -551,7 +553,7 @@ async fn api_v1_unassigned_onboarding_and_role_surfaces_work() {
     )
     .await;
     assert_eq!(onboarding.0, StatusCode::OK);
-    assert_eq!(onboarding.1["profile"]["onboarding_completed"], true);
+    assert_eq!(onboarding.1["profile"]["onboardingCompleted"], true);
 
     let me = request_json(
         &app,
@@ -636,8 +638,9 @@ async fn api_v1_unassigned_onboarding_and_role_surfaces_work() {
 }
 
 async fn setup_app() -> axum::Router {
-    let database_url = std::env::var("TEST_DATABASE_URL")
-        .unwrap_or_else(|_| "postgresql://verinest:verinest@127.0.0.1:55432/verinest_test".to_string());
+    let database_url = std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
+        "postgresql://verinest:verinest@127.0.0.1:55432/verinest_test".to_string()
+    });
     let redis_url =
         std::env::var("TEST_REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
     let settings = Settings {
@@ -776,7 +779,12 @@ fn user_id_of(value: &Value) -> String {
 async fn request_json(app: &axum::Router, request: Request<Body>) -> (StatusCode, Value) {
     let response = app.clone().oneshot(request).await.expect("response");
     let status = response.status();
-    let bytes = response.into_body().collect().await.expect("body").to_bytes();
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body")
+        .to_bytes();
     let body = if bytes.is_empty() {
         json!({})
     } else {

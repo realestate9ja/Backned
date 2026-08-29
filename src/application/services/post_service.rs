@@ -6,7 +6,11 @@ use crate::{
         responses::{CreateResponseInput, ResponseCreated, ResponseRepository},
         users::{User, UserRepository},
     },
-    infrastructure::cache::CacheService,
+    infrastructure::{
+        cache::CacheService,
+        email::service::{header_asset_url, HEADER_LEAD_ALERT, HEADER_NEW_MATCH},
+        email::MailService,
+    },
     interfaces::http::errors::AppError,
     utils::{pagination::Pagination, validation},
 };
@@ -20,6 +24,7 @@ pub struct PostService {
     properties: PropertyRepository,
     notifications: NotificationRepository,
     cache: CacheService,
+    mail_service: MailService,
 }
 
 impl PostService {
@@ -30,6 +35,7 @@ impl PostService {
         properties: PropertyRepository,
         notifications: NotificationRepository,
         cache: CacheService,
+        mail_service: MailService,
     ) -> Self {
         Self {
             posts,
@@ -38,10 +44,15 @@ impl PostService {
             properties,
             notifications,
             cache,
+            mail_service,
         }
     }
 
-    pub async fn create_post(&self, actor: &User, input: CreatePostInput) -> Result<Uuid, AppError> {
+    pub async fn create_post(
+        &self,
+        actor: &User,
+        mut input: CreatePostInput,
+    ) -> Result<Uuid, AppError> {
         validation::validate_required(&input.request_title, "request_title")?;
         validation::validate_required(&input.area, "area")?;
         validation::validate_required(&input.city, "city")?;
@@ -51,27 +62,95 @@ impl PostService {
         validation::validate_money(input.min_budget, "min_budget")?;
         validation::validate_money(input.max_budget, "max_budget")?;
         if input.max_budget < input.min_budget {
-            return Err(AppError::bad_request("max_budget must be greater than or equal to min_budget"));
+            return Err(AppError::bad_request(
+                "max_budget must be greater than or equal to min_budget",
+            ));
         }
         if input.bedrooms < 0 {
-            return Err(AppError::bad_request("bedrooms must be greater than or equal to 0"));
+            return Err(AppError::bad_request(
+                "bedrooms must be greater than or equal to 0",
+            ));
         }
         validation::validate_non_empty_vec(&input.desired_features, "desired_features")?;
         validation::validate_required(&input.description, "description")?;
 
+        if let Some(target_property_id) = input.target_property_id {
+            let property = self
+                .properties
+                .find_published_detail_by_id(target_property_id)
+                .await?
+                .ok_or_else(|| AppError::not_found("target property not found"))?;
+            let target_contact_id = property.agent_id.unwrap_or(property.owner_id);
+
+            if let Some(target_agent_id) = input.target_agent_id {
+                if target_agent_id != target_contact_id {
+                    return Err(AppError::bad_request(
+                        "target agent does not match the selected property",
+                    ));
+                }
+            } else {
+                input.target_agent_id = Some(target_contact_id);
+            }
+
+            input.target_property_title = Some(property.title.clone());
+            input.target_property_image_url = property.images.first().cloned();
+            input.target_property_location = Some(property.location.clone());
+        }
+
         let post = self.posts.create(&input, actor.id).await?;
-        let recipients = self
-            .users
-            .list_notifiable_agents(&input.city, &input.state)
-            .await?
-            .into_iter()
-            .map(|agent| AgentNotificationTarget {
-                agent_id: agent.id,
-                matched_city: agent.operating_city,
-                matched_state: agent.operating_state,
-            })
-            .collect::<Vec<_>>();
-        self.notifications.create_for_post(post.id, &recipients).await?;
+        
+        // If target_agent_id is specified, only notify that agent
+        // Otherwise, notify all notifiable agents in the area
+        let recipients = if let Some(target_agent_id) = input.target_agent_id {
+            // Verify target agent exists and is valid
+            if let Some(agent) = self.users.find_agent_by_id(target_agent_id).await? {
+                vec![AgentNotificationTarget {
+                    agent_id: agent.id,
+                    matched_city: String::new(),
+                    matched_state: agent.operating_state.unwrap_or_default(),
+                }]
+            } else {
+                return Err(AppError::not_found("target agent not found"));
+            }
+        } else {
+            self.users
+                .list_notifiable_agents(&input.state)
+                .await?
+                .into_iter()
+                .map(|agent| AgentNotificationTarget {
+                    agent_id: agent.id,
+                    matched_city: String::new(),
+                    matched_state: agent.operating_state,
+                })
+                .collect::<Vec<_>>()
+        };
+        
+        self.notifications
+            .create_for_post(post.id, &recipients)
+            .await?;
+
+        let header_image_url = header_asset_url(HEADER_LEAD_ALERT);
+        for recipient in &recipients {
+            if let Some(agent) = self.users.find_by_id(recipient.agent_id).await? {
+                if !agent.notifications_enabled {
+                    continue;
+                }
+                let email = self.mail_service.need_alert_email(
+                    agent.email,
+                    &agent.full_name,
+                    &input.request_title,
+                    &input.area,
+                    &input.city,
+                    &input.state,
+                    &input.property_type,
+                    input.min_budget,
+                    input.max_budget,
+                    "https://verinest.ng/provider/inbox",
+                    &header_image_url,
+                );
+                let _ = self.mail_service.send(email).await;
+            }
+        }
         self.cache.invalidate_namespace("posts:list").await?;
         Ok(post.id)
     }
@@ -148,6 +227,24 @@ impl PostService {
         }
 
         let response = self.responses.create(post_id, actor.id, &input).await?;
+
+        if let Some(post) = self.posts.find_by_id(post_id).await? {
+            if let Some(seeker) = self.users.find_by_id(post.author_id).await? {
+                if seeker.email_verified {
+                    let response_email = self.mail_service.need_response_email(
+                        seeker.email,
+                        &seeker.full_name,
+                        &actor.full_name,
+                        &post.request_title,
+                        &input.message,
+                        "https://verinest.ng/seeker/offers",
+                        &header_asset_url(HEADER_NEW_MATCH),
+                    );
+                    let _ = self.mail_service.send(response_email).await;
+                }
+            }
+        }
+
         self.cache.invalidate_namespace("posts:list").await?;
         Ok(response)
     }

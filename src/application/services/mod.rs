@@ -1,15 +1,21 @@
 mod audit_service;
 mod auth_service;
+mod booking_email_reminder_service;
+mod comment_service;
 mod post_service;
 mod property_service;
+mod verification_reminder_service;
 mod trust_service;
 mod user_service;
 mod workflow_service;
 
 pub use audit_service::{AuditActor, AuditEvent, AuditService};
 pub use auth_service::{AuthService, ValueAck};
+pub use booking_email_reminder_service::BookingEmailReminderService;
+pub use comment_service::CommentService;
 pub use post_service::PostService;
 pub use property_service::PropertyService;
+pub use verification_reminder_service::VerificationReminderService;
 pub use trust_service::TrustService;
 pub use user_service::UserService;
 pub use workflow_service::WorkflowService;

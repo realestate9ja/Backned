@@ -12,7 +12,12 @@ pub enum PropertyStatus {
     PendingVerification,
     Verified,
     Published,
+    Rejected,
+    Hidden,
     Suspended,
+    RentedOut,
+    SoldOut,
+    InUse,
 }
 
 #[derive(Debug, Deserialize)]
@@ -23,9 +28,14 @@ pub struct CreatePropertyInput {
     pub exact_address: String,
     pub description: String,
     pub images: Vec<String>,
+    pub bedrooms: Option<i32>,
+    pub bathrooms: Option<i32>,
+    pub bedrooms_label: Option<String>,
+    pub property_category: Option<String>,
     pub contact_name: String,
     pub contact_phone: String,
     pub is_service_apartment: bool,
+    pub listing_type: Option<String>,
     pub requested_agent_id: Option<Uuid>,
     pub self_managed: Option<bool>,
 }
@@ -51,13 +61,28 @@ pub struct Property {
     pub exact_address: String,
     pub description: String,
     pub images: Vec<String>,
+    #[sqlx(default)]
+    pub bedrooms: i32,
+    #[sqlx(default)]
+    pub bathrooms: i32,
+    #[sqlx(default)]
+    pub bedrooms_label: Option<String>,
+    #[sqlx(default)]
+    pub property_category: Option<String>,
     pub contact_name: String,
     pub contact_phone: String,
     pub is_service_apartment: bool,
+    pub listing_type: String,
     pub self_managed: bool,
     pub status: PropertyStatus,
     pub verified_by: Option<Uuid>,
     pub verified_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub reviewed_by: Option<Uuid>,
+    #[sqlx(default)]
+    pub reviewed_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub review_notes: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -70,15 +95,59 @@ pub struct PropertyListItem {
     pub location: String,
     pub description: String,
     pub images: Vec<String>,
+    #[sqlx(default)]
+    pub bedrooms: i32,
+    #[sqlx(default)]
+    pub bathrooms: i32,
+    #[sqlx(default)]
+    pub bedrooms_label: Option<String>,
+    #[sqlx(default)]
+    pub property_category: Option<String>,
     pub is_service_apartment: bool,
+    #[sqlx(default)]
+    pub listing_type: String,
     pub status: PropertyStatus,
     pub self_managed: bool,
     pub owner_id: Uuid,
     pub agent_id: Option<Uuid>,
     pub owner_name: String,
     pub agent_name: Option<String>,
+    pub owner_phone: Option<String>,
+    pub agent_phone: Option<String>,
     pub created_at: DateTime<Utc>,
     pub verified_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub reviewed_by: Option<Uuid>,
+    #[sqlx(default)]
+    pub reviewed_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub review_notes: Option<String>,
+    #[sqlx(default)]
+    pub view_count: i64,
+    #[sqlx(default)]
+    pub offer_count: i64,
+    #[sqlx(default)]
+    pub pending_price_request_id: Option<Uuid>,
+    #[sqlx(default)]
+    pub pending_requested_price: Option<i64>,
+    #[sqlx(default)]
+    pub pending_price_requested_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub status_locked_until: Option<DateTime<Utc>>,
+}
+
+impl PropertyListItem {
+    pub fn sanitize_for_role(mut self, role: UserRole, viewer_id: Option<Uuid>) -> Self {
+        // Hide agent phone unless viewer is the agent
+        if self.agent_id != viewer_id {
+            self.agent_phone = None;
+        }
+        // Hide details from seekers
+        if matches!(role, UserRole::Seeker) {
+            self.owner_phone = None;
+        }
+        self
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -89,20 +158,50 @@ pub struct PropertyDetail {
     pub location: String,
     pub description: String,
     pub images: Vec<String>,
+    #[sqlx(default)]
+    pub bedrooms: i32,
+    #[sqlx(default)]
+    pub bathrooms: i32,
+    #[sqlx(default)]
+    pub bedrooms_label: Option<String>,
+    #[sqlx(default)]
+    pub property_category: Option<String>,
     pub is_service_apartment: bool,
+    #[sqlx(default)]
+    pub listing_type: String,
     pub status: PropertyStatus,
     pub self_managed: bool,
     pub owner_id: Uuid,
     pub agent_id: Option<Uuid>,
     pub owner_name: String,
     pub agent_name: Option<String>,
+    pub agent_phone: Option<String>,
+    pub company_name: Option<String>,
     pub exact_address: Option<String>,
     pub contact_name: Option<String>,
     pub contact_phone: Option<String>,
     pub verified_by: Option<Uuid>,
     pub verified_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub reviewed_by: Option<Uuid>,
+    #[sqlx(default)]
+    pub reviewed_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub review_notes: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[sqlx(default)]
+    pub view_count: i64,
+    #[sqlx(default)]
+    pub offer_count: i64,
+    #[sqlx(default)]
+    pub pending_price_request_id: Option<Uuid>,
+    #[sqlx(default)]
+    pub pending_requested_price: Option<i64>,
+    #[sqlx(default)]
+    pub pending_price_requested_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub status_locked_until: Option<DateTime<Utc>>,
 }
 
 impl PropertyDetail {
@@ -111,6 +210,11 @@ impl PropertyDetail {
             self.exact_address = None;
             self.contact_name = None;
             self.contact_phone = None;
+            self.agent_phone = None;
+            self.pending_price_request_id = None;
+            self.pending_requested_price = None;
+            self.pending_price_requested_at = None;
+            self.status_locked_until = None;
         }
         self
     }

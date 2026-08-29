@@ -3,8 +3,9 @@ use crate::{
     domain::{
         notifications::AgentPostNotificationItem,
         users::{
-            AgentNotificationSettingsView, AgentProfile, DashboardResponse, UpdateAgentNotificationSettingsInput,
-            UpdateAgentVerificationInput, User, UserPublicView,
+            AgentNotificationSettingsView, AgentProfile, DashboardResponse,
+            UpdateAgentNotificationSettingsInput, UpdateAgentVerificationInput, User,
+            UserPublicView,
         },
     },
     interfaces::http::errors::AppError,
@@ -35,10 +36,15 @@ impl UserUseCases {
         actor: &User,
         input: UpdateAgentNotificationSettingsInput,
     ) -> Result<AgentNotificationSettingsView, AppError> {
-        self.service.update_agent_notification_settings(actor, input).await
+        self.service
+            .update_agent_notification_settings(actor, input)
+            .await
     }
 
-    pub async fn list_agent_post_alerts(&self, actor: &User) -> Result<Vec<AgentPostNotificationItem>, AppError> {
+    pub async fn list_agent_post_alerts(
+        &self,
+        actor: &User,
+    ) -> Result<Vec<AgentPostNotificationItem>, AppError> {
         self.service.list_agent_post_alerts(actor).await
     }
 
@@ -52,6 +58,8 @@ impl UserUseCases {
         agent_id: Uuid,
         input: UpdateAgentVerificationInput,
     ) -> Result<UserPublicView, AppError> {
-        self.service.update_agent_verification(actor, agent_id, input).await
+        self.service
+            .update_agent_verification(actor, agent_id, input)
+            .await
     }
 }

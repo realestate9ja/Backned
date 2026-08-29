@@ -1,10 +1,7 @@
-use std::{
-    collections::{HashMap, VecDeque},
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::time::Duration;
 
-use tokio::sync::Mutex;
+use anyhow::Result;
+use redis::{Script, aio::ConnectionManager};
 
 #[derive(Clone, Copy)]
 pub enum RateLimitScope {
@@ -18,11 +15,12 @@ pub struct RateLimiter {
     auth_window: Duration,
     trust_max_requests: usize,
     trust_window: Duration,
-    entries: Arc<Mutex<HashMap<String, VecDeque<Instant>>>>,
+    connection: Option<ConnectionManager>,
 }
 
 impl RateLimiter {
     pub fn new(
+        connection: Option<ConnectionManager>,
         auth_max_requests: usize,
         auth_window_seconds: u64,
         trust_max_requests: usize,
@@ -33,33 +31,36 @@ impl RateLimiter {
             auth_window: Duration::from_secs(auth_window_seconds),
             trust_max_requests,
             trust_window: Duration::from_secs(trust_window_seconds),
-            entries: Arc::new(Mutex::new(HashMap::new())),
+            connection,
         }
     }
 
-    pub async fn check(&self, scope: RateLimitScope, key: &str) -> bool {
+    pub async fn check(&self, scope: RateLimitScope, key: &str) -> Result<bool> {
+        let Some(mut connection) = self.connection.clone() else {
+            return Ok(true);
+        };
         let (max_requests, window) = match scope {
             RateLimitScope::Auth => (self.auth_max_requests, self.auth_window),
             RateLimitScope::Trust => (self.trust_max_requests, self.trust_window),
         };
-        let now = Instant::now();
-        let mut entries = self.entries.lock().await;
-        let queue = entries.entry(format!("{}:{key}", scope_key(scope))).or_default();
 
-        while let Some(front) = queue.front() {
-            if now.duration_since(*front) > window {
-                queue.pop_front();
-            } else {
-                break;
-            }
-        }
+        let redis_key = format!("verinest:rate_limit:{}:{key}", scope_key(scope));
+        let script = Script::new(
+            r#"
+            local current = redis.call("INCR", KEYS[1])
+            if current == 1 then
+                redis.call("EXPIRE", KEYS[1], ARGV[1])
+            end
+            return current
+            "#,
+        );
 
-        if queue.len() >= max_requests {
-            return false;
-        }
-
-        queue.push_back(now);
-        true
+        let current: i64 = script
+            .key(redis_key)
+            .arg(window.as_secs() as i64)
+            .invoke_async(&mut connection)
+            .await?;
+        Ok(current <= max_requests as i64)
     }
 }
 

@@ -21,8 +21,8 @@ impl Pagination {
         if page == 0 {
             return Err(AppError::bad_request("page must be greater than 0"));
         }
-        if per_page == 0 || per_page > 100 {
-            return Err(AppError::bad_request("per_page must be between 1 and 100"));
+        if per_page == 0 || per_page > 200 {
+            return Err(AppError::bad_request("per_page must be between 1 and 200"));
         }
 
         Ok(Self { page, per_page })

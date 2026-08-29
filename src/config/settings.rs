@@ -3,6 +3,7 @@ use anyhow::{Context, Result};
 #[derive(Clone, Debug)]
 pub struct Settings {
     pub database_url: String,
+    pub read_database_url: Option<String>,
     pub redis_url: String,
     pub cache_ttl_seconds: u64,
     pub jwt_secret: String,
@@ -28,11 +29,17 @@ pub struct Settings {
     pub smtp_username: Option<String>,
     pub smtp_password: Option<String>,
     pub smtp_use_starttls: bool,
+    pub run_booking_reminder_cron: bool,
+    pub run_verification_reminder_cron: bool,
+    pub run_migrations_on_startup: bool,
 }
 
 impl Settings {
     pub fn from_env() -> Result<Self> {
         let database_url = std::env::var("DATABASE_URL").context("DATABASE_URL is required")?;
+        let read_database_url = std::env::var("READ_DATABASE_URL")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
         let redis_url = std::env::var("REDIS_URL").context("REDIS_URL is required")?;
         let cache_ttl_seconds = std::env::var("CACHE_TTL_SECONDS")
             .unwrap_or_else(|_| "300".to_string())
@@ -51,14 +58,14 @@ impl Settings {
             .unwrap_or_else(|_| "10".to_string())
             .parse()
             .context("DATABASE_MAX_CONNECTIONS must be a valid integer")?;
-        let admin_bootstrap_token =
-            std::env::var("ADMIN_BOOTSTRAP_TOKEN").unwrap_or_else(|_| "dev-admin-bootstrap-token".to_string());
+        let admin_bootstrap_token = std::env::var("ADMIN_BOOTSTRAP_TOKEN")
+            .unwrap_or_else(|_| "dev-admin-bootstrap-token".to_string());
         let livekit_url =
             std::env::var("LIVEKIT_URL").unwrap_or_else(|_| "ws://127.0.0.1:7880".to_string());
         let livekit_api_key =
             std::env::var("LIVEKIT_API_KEY").unwrap_or_else(|_| "dev-livekit-key".to_string());
-        let livekit_api_secret =
-            std::env::var("LIVEKIT_API_SECRET").unwrap_or_else(|_| "dev-livekit-secret".to_string());
+        let livekit_api_secret = std::env::var("LIVEKIT_API_SECRET")
+            .unwrap_or_else(|_| "dev-livekit-secret".to_string());
         let livekit_token_ttl_minutes = std::env::var("LIVEKIT_TOKEN_TTL_MINUTES")
             .unwrap_or_else(|_| "60".to_string())
             .parse()
@@ -79,28 +86,50 @@ impl Settings {
             .unwrap_or_else(|_| "60".to_string())
             .parse()
             .context("TRUST_RATE_LIMIT_WINDOW_SECONDS must be a valid integer")?;
-        let app_base_url = std::env::var("APP_BASE_URL")
-            .unwrap_or_else(|_| format!("http://127.0.0.1:{port}"));
-        let mail_provider = std::env::var("MAIL_PROVIDER").unwrap_or_else(|_| "disabled".to_string());
-        let mail_from_email =
-            std::env::var("MAIL_FROM_EMAIL").unwrap_or_else(|_| "noreply@verinest.local".to_string());
+        let app_base_url =
+            std::env::var("APP_BASE_URL").unwrap_or_else(|_| format!("http://127.0.0.1:{port}"));
+        let mail_provider =
+            std::env::var("MAIL_PROVIDER").unwrap_or_else(|_| "disabled".to_string());
+        let mail_from_email = std::env::var("MAIL_FROM_EMAIL")
+            .unwrap_or_else(|_| "noreply@verinest.local".to_string());
         let mail_from_name =
             std::env::var("MAIL_FROM_NAME").unwrap_or_else(|_| "VeriNest".to_string());
-        let resend_api_key = std::env::var("RESEND_API_KEY").ok().filter(|value| !value.trim().is_empty());
-        let smtp_host = std::env::var("SMTP_HOST").ok().filter(|value| !value.trim().is_empty());
+        let resend_api_key = std::env::var("RESEND_API_KEY")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
+        let smtp_host = std::env::var("SMTP_HOST")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
         let smtp_port = std::env::var("SMTP_PORT")
             .unwrap_or_else(|_| "587".to_string())
             .parse()
             .context("SMTP_PORT must be a valid integer")?;
-        let smtp_username = std::env::var("SMTP_USERNAME").ok().filter(|value| !value.trim().is_empty());
-        let smtp_password = std::env::var("SMTP_PASSWORD").ok().filter(|value| !value.trim().is_empty());
+        let smtp_username = std::env::var("SMTP_USERNAME")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
+        let smtp_password = std::env::var("SMTP_PASSWORD")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
         let smtp_use_starttls = std::env::var("SMTP_USE_STARTTLS")
             .unwrap_or_else(|_| "true".to_string())
             .parse()
             .context("SMTP_USE_STARTTLS must be a valid boolean")?;
+        let run_booking_reminder_cron = std::env::var("RUN_BOOKING_REMINDER_CRON")
+            .unwrap_or_else(|_| "false".to_string())
+            .parse()
+            .context("RUN_BOOKING_REMINDER_CRON must be a valid boolean")?;
+        let run_verification_reminder_cron = std::env::var("RUN_VERIFICATION_REMINDER_CRON")
+            .unwrap_or_else(|_| "false".to_string())
+            .parse()
+            .context("RUN_VERIFICATION_REMINDER_CRON must be a valid boolean")?;
+        let run_migrations_on_startup = std::env::var("RUN_MIGRATIONS_ON_STARTUP")
+            .unwrap_or_else(|_| "false".to_string())
+            .parse()
+            .context("RUN_MIGRATIONS_ON_STARTUP must be a valid boolean")?;
 
         Ok(Self {
             database_url,
+            read_database_url,
             redis_url,
             cache_ttl_seconds,
             jwt_secret,
@@ -126,6 +155,9 @@ impl Settings {
             smtp_username,
             smtp_password,
             smtp_use_starttls,
+            run_booking_reminder_cron,
+            run_verification_reminder_cron,
+            run_migrations_on_startup,
         })
     }
 }

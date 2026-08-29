@@ -1,8 +1,12 @@
 pub mod api_v1;
 pub mod auth;
+pub mod comments;
+pub mod contact;
+pub mod frontend_api;
 pub mod health;
 pub mod posts;
 pub mod properties;
 pub mod trust;
+pub mod disputes;
 pub mod users;
 pub mod workflow;

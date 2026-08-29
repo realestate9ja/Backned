@@ -1,6 +1,9 @@
 use crate::{
     domain::{
-        properties::{CreatePropertyInput, PropertyDetail, PropertyListItem, PropertyQuery, PropertyRepository},
+        properties::{
+            CreatePropertyInput, PropertyDetail, PropertyListItem, PropertyQuery,
+            PropertyRepository,
+        },
         users::{User, UserRepository, UserRole},
         workflow::WorkflowRepository,
     },
@@ -39,36 +42,62 @@ impl PropertyService {
         input: CreatePropertyInput,
     ) -> Result<PropertyDetail, AppError> {
         if !actor.role.can_manage_properties() {
-            return Err(AppError::forbidden("only agents and landlords can create properties"));
+            return Err(AppError::forbidden(
+                "only agents and landlords can create properties",
+            ));
         }
         if actor.is_banned {
-            return Err(AppError::forbidden("account is banned from listing properties"));
+            return Err(AppError::forbidden(
+                "account is banned from listing properties",
+            ));
         }
         if actor
             .listing_restricted_until
             .is_some_and(|until| until > Utc::now())
         {
-            return Err(AppError::forbidden("account is temporarily restricted from listing properties"));
+            return Err(AppError::forbidden(
+                "account is temporarily restricted from listing properties",
+            ));
         }
-        if actor.role == UserRole::Agent && actor.verification_status != "verified" {
-            return Err(AppError::forbidden("agent must be verified before listing properties"));
+        if actor.role == UserRole::Agent && !actor.is_verification_approved() {
+            return Err(AppError::forbidden(
+                "agent must be approved before listing properties",
+            ));
         }
 
         validation::validate_required(&input.title, "title")?;
         validation::validate_money(input.price, "price")?;
+        if input.price < 50_000 {
+            return Err(AppError::bad_request(
+                "price must be at least NGN 50,000",
+            ));
+        }
         validation::validate_required(&input.location, "location")?;
         validation::validate_required(&input.exact_address, "exact_address")?;
         validation::validate_required(&input.description, "description")?;
         validation::validate_required(&input.contact_name, "contact_name")?;
         validation::validate_required(&input.contact_phone, "contact_phone")?;
         validation::validate_non_empty_vec(&input.images, "images")?;
+        if let Some(bedrooms) = input.bedrooms {
+            if bedrooms < 0 {
+                return Err(AppError::bad_request("bedrooms must not be negative"));
+            }
+        }
+        if let Some(bathrooms) = input.bathrooms {
+            if bathrooms < 0 {
+                return Err(AppError::bad_request("bathrooms must not be negative"));
+            }
+        }
+        if let Some(label) = input.bedrooms_label.as_ref() {
+            validation::validate_required(label, "bedrooms_label")?;
+        }
 
         let (assigned_agent_id, self_managed, requested_agent_id, status) = match actor.role {
             UserRole::Agent => (
                 Some(actor.id),
                 false,
                 None,
-                crate::domain::properties::PropertyStatus::Published,
+                crate::domain::properties::PropertyStatus::PendingVerification,
             ),
             UserRole::Landlord => {
                 let requested_agent_id = input.requested_agent_id;
@@ -99,20 +128,29 @@ impl PropertyService {
                     )
                 }
             }
-            UserRole::Unassigned => (None, false, None, crate::domain::properties::PropertyStatus::Draft),
-            UserRole::Seeker => (None, false, None, crate::domain::properties::PropertyStatus::Draft),
-            UserRole::Admin => (None, false, None, crate::domain::properties::PropertyStatus::Draft),
+            UserRole::Unassigned => (
+                None,
+                false,
+                None,
+                crate::domain::properties::PropertyStatus::Draft,
+            ),
+            UserRole::Seeker => (
+                None,
+                false,
+                None,
+                crate::domain::properties::PropertyStatus::Draft,
+            ),
+            UserRole::Admin | UserRole::SuperAdmin => (
+                None,
+                false,
+                None,
+                crate::domain::properties::PropertyStatus::Draft,
+            ),
         };
 
         let property = self
             .properties
-            .create(
-                &input,
-                actor.id,
-                assigned_agent_id,
-                self_managed,
-                status,
-            )
+            .create(&input, actor.id, assigned_agent_id, self_managed, status)
             .await?;
         if actor.role == UserRole::Landlord && requested_agent_id.is_some() {
             self.workflow
@@ -131,10 +169,7 @@ impl PropertyService {
         Ok(detail.sanitize_for_role(actor.role))
     }
 
-    pub async fn list(
-        &self,
-        query: PropertyQuery,
-    ) -> Result<Vec<PropertyListItem>, AppError> {
+    pub async fn list(&self, query: PropertyQuery) -> Result<Vec<PropertyListItem>, AppError> {
         let pagination = Pagination::new(query.page, query.per_page)?;
         let cache_key = self
             .cache
@@ -150,7 +185,11 @@ impl PropertyService {
                 ),
             )
             .await?;
-        if let Some(cached) = self.cache.get_json::<Vec<PropertyListItem>>(&cache_key).await? {
+        if let Some(cached) = self
+            .cache
+            .get_json::<Vec<PropertyListItem>>(&cache_key)
+            .await?
+        {
             return Ok(cached);
         }
 
@@ -169,8 +208,14 @@ impl PropertyService {
         Ok(items)
     }
 
-    pub async fn get_by_id(&self, id: uuid::Uuid, actor: Option<&User>) -> Result<PropertyDetail, AppError> {
-        let is_related = |detail: &PropertyDetail, user: &User| detail.owner_id == user.id || detail.agent_id == Some(user.id);
+    pub async fn get_by_id(
+        &self,
+        id: uuid::Uuid,
+        actor: Option<&User>,
+    ) -> Result<PropertyDetail, AppError> {
+        let is_related = |detail: &PropertyDetail, user: &User| {
+            detail.owner_id == user.id || detail.agent_id == Some(user.id)
+        };
 
         if let Some(user) = actor {
             let detail = self
@@ -179,16 +224,26 @@ impl PropertyService {
                 .await?
                 .ok_or_else(|| AppError::not_found("property not found"))?;
 
-            if detail.status != crate::domain::properties::PropertyStatus::Published && !is_related(&detail, user) {
+            if detail.status != crate::domain::properties::PropertyStatus::Published
+                && !is_related(&detail, user)
+            {
                 return Err(AppError::not_found("property not found"));
             }
 
             if is_related(&detail, user) {
+                // Owner/agent viewing their own property - don't count as a view
+                self.cache.invalidate_namespace("properties:detail").await?;
+                self.cache.invalidate_namespace("properties:list").await?;
                 return Ok(detail);
             }
 
+            // Non-owner/agent viewing - count as a view
+            self.properties.record_view(id, Some(user.id)).await?;
+            self.cache.invalidate_namespace("properties:detail").await?;
+            self.cache.invalidate_namespace("properties:list").await?;
+
             let visibility = match user.role {
-                UserRole::Agent | UserRole::Landlord | UserRole::Admin => "privileged",
+                UserRole::Agent | UserRole::Landlord | UserRole::Admin | UserRole::SuperAdmin => "privileged",
                 UserRole::Unassigned | UserRole::Seeker => "restricted",
             };
             let cache_key = self
@@ -207,8 +262,14 @@ impl PropertyService {
             return Ok(sanitized);
         }
 
-        let cache_key = self.cache.versioned_key("properties:detail", &format!("{id}:restricted")).await?;
+        let cache_key = self
+            .cache
+            .versioned_key("properties:detail", &format!("{id}:restricted"))
+            .await?;
         if let Some(cached) = self.cache.get_json::<PropertyDetail>(&cache_key).await? {
+            self.properties.record_view(id, None).await?;
+            self.cache.invalidate_namespace("properties:detail").await?;
+            self.cache.invalidate_namespace("properties:list").await?;
             return Ok(cached);
         }
         let detail = self
@@ -217,6 +278,9 @@ impl PropertyService {
             .await?
             .ok_or_else(|| AppError::not_found("property not found"))?
             .sanitize_for_role(UserRole::Seeker);
+        self.properties.record_view(id, None).await?;
+        self.cache.invalidate_namespace("properties:detail").await?;
+        self.cache.invalidate_namespace("properties:list").await?;
         self.cache.set_json(&cache_key, &detail).await?;
         Ok(detail)
     }

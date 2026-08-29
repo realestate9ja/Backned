@@ -1,12 +1,13 @@
 use crate::{
     domain::users::{
         AuthResponse, BootstrapAdminInput, LoginInput, RegisterUserInput, SendEmailCodeInput,
-        UserPublicView, UserRepository, UserRole, VerifyEmailCodeInput, VerifyEmailInput,
+        SendPasswordResetInput, ResetPasswordInput, UserPublicView, UserRepository, UserRole, 
+        VerifyEmailCodeInput, VerifyEmailInput,
     },
     infrastructure::{
-        auth::{JwtService, PasswordService},
+        auth::{JwtService, PasswordService, CsrfService},
         cache::CacheService,
-        email::MailService,
+        email::{MailService, service::{header_asset_url, HEADER_SECURITY_DARK, HEADER_WELCOME}},
     },
     interfaces::http::errors::AppError,
     utils::validation,
@@ -47,7 +48,9 @@ impl AuthService {
         validation::validate_email(&input.email)?;
         validation::validate_password(&input.password)?;
         if input.role == UserRole::Admin {
-            return Err(AppError::forbidden("admin users cannot be created through public registration"));
+            return Err(AppError::forbidden(
+                "admin users cannot be created through public registration",
+            ));
         }
 
         if self.users.find_by_email(&input.email).await?.is_some() {
@@ -59,10 +62,19 @@ impl AuthService {
         if matches!(user.role, crate::domain::users::UserRole::Agent) {
             self.cache.invalidate_namespace("agents").await?;
         }
-        self.build_auth_response(user).await
+        let response = self.build_auth_response(user.clone()).await?;
+        let welcome_url = format!("{}/onboarding", self.app_base_url.trim_end_matches('/'));
+        let welcome_email =
+            self.mail_service
+                .welcome_email(user.email.clone(), &user.full_name, &welcome_url, &header_asset_url(HEADER_WELCOME));
+        self.mail_service.send(welcome_email).await?;
+        Ok(response)
     }
 
-    pub async fn bootstrap_admin(&self, input: BootstrapAdminInput) -> Result<AuthResponse, AppError> {
+    pub async fn bootstrap_admin(
+        &self,
+        input: BootstrapAdminInput,
+    ) -> Result<AuthResponse, AppError> {
         validation::validate_required(&input.full_name, "full_name")?;
         validation::validate_email(&input.email)?;
         validation::validate_password(&input.password)?;
@@ -107,9 +119,12 @@ impl AuthService {
                 self.app_base_url.trim_end_matches('/'),
                 verification_token
             );
-            let email = self
-                .mail_service
-                .verification_email(user.email.clone(), &user.full_name, &verification_link);
+            let email = self.mail_service.verification_email(
+                user.email.clone(),
+                &user.full_name,
+                &verification_link,
+                &header_asset_url(HEADER_SECURITY_DARK),
+            );
             self.mail_service.send(email).await?;
         }
 
@@ -130,7 +145,9 @@ impl AuthService {
             .mark_email_verified(user.id)
             .await?
             .ok_or_else(|| AppError::not_found("user not found"))?;
-        self.users.mark_email_verification_token_used(&input.token).await?;
+        self.users
+            .mark_email_verification_token_used(&input.token)
+            .await?;
 
         Ok(UserPublicView::from(updated))
     }
@@ -148,9 +165,9 @@ impl AuthService {
             .users
             .create_email_verification_code(user.id, &user.email, &input.purpose)
             .await?;
-        let email = self
-            .mail_service
-            .verification_code_email(user.email.clone(), &user.full_name, &code);
+        let email =
+            self.mail_service
+                .verification_code_email(user.email.clone(), &user.full_name, &code, &header_asset_url(HEADER_SECURITY_DARK));
         self.mail_service.send(email).await?;
 
         Ok(ValueAck {
@@ -160,7 +177,10 @@ impl AuthService {
         })
     }
 
-    pub async fn verify_email_code(&self, input: VerifyEmailCodeInput) -> Result<UserPublicView, AppError> {
+    pub async fn verify_email_code(
+        &self,
+        input: VerifyEmailCodeInput,
+    ) -> Result<UserPublicView, AppError> {
         validation::validate_email(&input.email)?;
         validation::validate_required(&input.code, "code")?;
 
@@ -202,8 +222,12 @@ impl AuthService {
         Ok(())
     }
 
-    async fn build_auth_response(&self, user: crate::domain::users::User) -> Result<AuthResponse, AppError> {
-        let token = self.jwt_service.generate_token(&user)?;
+    async fn build_auth_response(
+        &self,
+        user: crate::domain::users::User,
+    ) -> Result<AuthResponse, AppError> {
+        let csrf_token = CsrfService::generate_token();
+        let token = self.jwt_service.generate_token(&user, &csrf_token)?;
         let refresh_token = self
             .users
             .create_refresh_token(user.id, Utc::now() + Duration::days(30))
@@ -212,7 +236,71 @@ impl AuthService {
             token,
             refresh_token,
             user: UserPublicView::from(user),
+            csrf_token: Some(csrf_token),
         })
+    }
+
+    pub async fn send_password_reset(
+        &self,
+        input: SendPasswordResetInput,
+    ) -> Result<ValueAck, AppError> {
+        validation::validate_email(&input.email)?;
+
+        let user = self
+            .users
+            .find_by_email(&input.email)
+            .await?
+            .ok_or_else(|| AppError::not_found("user with this email not found"))?;
+
+        if user.is_banned {
+            return Err(AppError::forbidden("account is banned"));
+        }
+
+        let reset_token = self.users.create_password_reset_token(user.id).await?;
+        let reset_link = format!(
+            "{}/auth/reset-password?token={}",
+            self.app_base_url.trim_end_matches('/'),
+            reset_token
+        );
+        let email = self
+            .mail_service
+            .password_reset_email(user.email.clone(), &user.full_name, &reset_link);
+        self.mail_service.send(email).await?;
+
+        Ok(ValueAck {
+            ok: true,
+            expires_in_seconds: 3600,
+            code_length: 0,
+        })
+    }
+
+    pub async fn reset_password(
+        &self,
+        input: ResetPasswordInput,
+    ) -> Result<UserPublicView, AppError> {
+        validation::validate_password(&input.password)?;
+
+        let user = self
+            .users
+            .find_by_password_reset_token(&input.token)
+            .await?
+            .ok_or_else(|| AppError::unauthorized("invalid or expired reset token"))?;
+
+        if user.is_banned {
+            return Err(AppError::forbidden("account is banned"));
+        }
+
+        let password_hash = self.password_service.hash_password(&input.password)?;
+        self.users.update_password(user.id, &password_hash).await?;
+        self.users.mark_password_reset_token_used(&input.token).await?;
+
+        let updated_user = self
+            .users
+            .find_by_id(user.id)
+            .await?
+            .ok_or_else(|| AppError::not_found("user not found"))?;
+
+        Ok(UserPublicView::from(updated_user))
     }
 }
 

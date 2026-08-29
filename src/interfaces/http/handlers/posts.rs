@@ -1,15 +1,14 @@
 use crate::{
-    domain::{posts::{CreatePostInput, PostQuery}, responses::CreateResponseInput},
-    interfaces::http::{
-        errors::AppError,
-        middleware::auth::AuthUser,
-        state::AppState,
+    domain::{
+        posts::{CreatePostInput, PostQuery},
+        responses::CreateResponseInput,
     },
+    interfaces::http::{errors::AppError, middleware::auth::AuthUser, state::AppState},
 };
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::StatusCode,
-    Json,
 };
 use serde::Serialize;
 use uuid::Uuid;
@@ -42,7 +41,9 @@ pub async fn respond_to_post(
     Path(post_id): Path<Uuid>,
     Json(payload): Json<CreateResponseInput>,
 ) -> Result<(StatusCode, Json<crate::domain::responses::ResponseCreated>), AppError> {
-    let response = state.post_use_cases.respond(&user, post_id, payload).await?;
+    let response = state
+        .post_use_cases
+        .respond(&user, post_id, payload)
+        .await?;
     Ok((StatusCode::CREATED, Json(response)))
 }
-

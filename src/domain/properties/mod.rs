@@ -3,4 +3,3 @@ pub mod repository;
 
 pub use model::*;
 pub use repository::PropertyRepository;
-

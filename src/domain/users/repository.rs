@@ -56,11 +56,15 @@ impl UserRepository {
         Ok(user)
     }
 
-    pub async fn create_admin(&self, input: &BootstrapAdminInput, password_hash: &str) -> Result<User> {
+    pub async fn create_admin(
+        &self,
+        input: &BootstrapAdminInput,
+        password_hash: &str,
+    ) -> Result<User> {
         let user = sqlx::query_as::<_, User>(
             r#"
             INSERT INTO users (id, full_name, email, email_verified, password_hash, role, verification_status, verified_at)
-            VALUES ($1, $2, $3, TRUE, $4, 'admin', 'verified', NOW())
+            VALUES ($1, $2, $3, TRUE, $4, $5, 'verified', NOW())
             RETURNING id, full_name, email, email_verified, password_hash, role, phone, bio,
                       notifications_enabled, operating_city, operating_state,
                       verification_status, verification_notes, verified_at,
@@ -72,11 +76,17 @@ impl UserRepository {
         .bind(&input.full_name)
         .bind(input.email.to_lowercase())
         .bind(password_hash)
+        .bind(input.role)
         .fetch_one(&self.pool)
         .await?;
 
-        self.ensure_profile(user.id, &user.full_name, user.phone.as_deref(), user.bio.as_deref())
-            .await?;
+        self.ensure_profile(
+            user.id,
+            &user.full_name,
+            user.phone.as_deref(),
+            user.bio.as_deref(),
+        )
+        .await?;
 
         Ok(user)
     }
@@ -117,6 +127,23 @@ impl UserRepository {
         .await?;
 
         Ok(user)
+    }
+
+    pub async fn find_avatar_url(&self, user_id: Uuid) -> Result<Option<String>> {
+        let avatar_url = sqlx::query_scalar::<_, Option<String>>(
+            r#"
+            SELECT COALESCE(NULLIF(TRIM(u.wallet_address), ''), p.avatar_url) AS avatar_url
+            FROM users u
+            LEFT JOIN profiles p ON p.user_id = u.id
+            WHERE u.id = $1
+            "#,
+        )
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await?
+        .flatten();
+
+        Ok(avatar_url)
     }
 
     pub async fn update_role(&self, user_id: Uuid, role: UserRole) -> Result<Option<User>> {
@@ -219,35 +246,39 @@ impl UserRepository {
         )
         .bind(agent_id)
         .bind(input.notifications_enabled)
-        .bind(input.operating_city.as_ref().map(|value| value.trim().to_string()))
-        .bind(input.operating_state.as_ref().map(|value| value.trim().to_string()))
+        .bind(
+            input
+                .operating_city
+                .as_ref()
+                .map(|value| value.trim().to_string()),
+        )
+        .bind(
+            input
+                .operating_state
+                .as_ref()
+                .map(|value| value.trim().to_string()),
+        )
         .fetch_one(&self.pool)
         .await?;
 
         Ok(user)
     }
 
-    pub async fn list_notifiable_agents(
-        &self,
-        city: &str,
-        state: &str,
-    ) -> Result<Vec<AgentNotificationRecipient>> {
+    pub async fn list_notifiable_agents(&self, state: &str) -> Result<Vec<AgentNotificationRecipient>> {
         let recipients = sqlx::query_as::<_, AgentNotificationRecipient>(
             r#"
             SELECT
                 id,
+                full_name,
+                email,
                 COALESCE(operating_city, '') AS operating_city,
                 COALESCE(operating_state, '') AS operating_state
             FROM users
             WHERE role = 'agent'
               AND notifications_enabled = TRUE
-              AND (
-                    LOWER(COALESCE(operating_city, '')) = LOWER($1)
-                 OR LOWER(COALESCE(operating_state, '')) = LOWER($2)
-              )
+              AND LOWER(COALESCE(operating_state, '')) = LOWER($1)
             "#,
         )
-        .bind(city.trim())
         .bind(state.trim())
         .fetch_all(&self.pool)
         .await?;
@@ -310,7 +341,14 @@ impl UserRepository {
         verification_status: &str,
         verification_notes: Option<&str>,
     ) -> Result<Option<User>> {
-        let verified_at = (verification_status == "verified").then_some(chrono::Utc::now());
+        let normalized_status = match verification_status.trim().to_lowercase().as_str() {
+            "verified" => "approved".to_string(),
+            "approved" => "approved".to_string(),
+            "pending" => "pending".to_string(),
+            "rejected" => "rejected".to_string(),
+            other => other.to_string(),
+        };
+        let verified_at = (normalized_status == "approved").then_some(chrono::Utc::now());
         let user = sqlx::query_as::<_, User>(
             r#"
             UPDATE users
@@ -327,7 +365,7 @@ impl UserRepository {
             "#,
         )
         .bind(agent_id)
-        .bind(verification_status)
+        .bind(normalized_status.as_str())
         .bind(verification_notes)
         .bind(verified_at)
         .fetch_optional(&self.pool)
@@ -487,7 +525,11 @@ impl UserRepository {
         Ok(())
     }
 
-    pub async fn create_refresh_token(&self, user_id: Uuid, expires_at: chrono::DateTime<Utc>) -> Result<String> {
+    pub async fn create_refresh_token(
+        &self,
+        user_id: Uuid,
+        expires_at: chrono::DateTime<Utc>,
+    ) -> Result<String> {
         let token = Uuid::new_v4().to_string();
         sqlx::query(
             r#"
@@ -569,5 +611,80 @@ impl UserRepository {
         .await?;
 
         Ok(())
+    }
+
+    pub async fn create_password_reset_token(&self, user_id: Uuid) -> Result<String> {
+        let token = Uuid::new_v4().to_string();
+        let expires_at = Utc::now() + Duration::hours(1);
+        sqlx::query(
+            r#"
+            INSERT INTO password_reset_tokens (id, user_id, token, expires_at)
+            VALUES ($1, $2, $3, $4)
+            "#,
+        )
+        .bind(Uuid::new_v4())
+        .bind(user_id)
+        .bind(&token)
+        .bind(expires_at)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(token)
+    }
+
+    pub async fn find_by_password_reset_token(&self, token: &str) -> Result<Option<User>> {
+        let user = sqlx::query_as::<_, User>(
+            r#"
+            SELECT u.id, u.full_name, u.email, u.email_verified, u.password_hash, u.role, u.phone, u.bio,
+                   u.notifications_enabled, u.operating_city, u.operating_state,
+                   u.verification_status, u.verification_notes, u.verified_at,
+                   u.quality_strikes, u.fraud_strikes, u.listing_restricted_until, u.is_banned,
+                   u.created_at, u.updated_at
+            FROM password_reset_tokens prt
+            JOIN users u ON u.id = prt.user_id
+            WHERE prt.token = $1
+              AND prt.used_at IS NULL
+              AND prt.expires_at > NOW()
+            ORDER BY prt.created_at DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(token.trim())
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(user)
+    }
+
+    pub async fn mark_password_reset_token_used(&self, token: &str) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE password_reset_tokens
+            SET used_at = NOW()
+            WHERE token = $1 AND used_at IS NULL
+            "#,
+        )
+        .bind(token.trim())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn update_password(&self, user_id: Uuid, password_hash: &str) -> Result<Option<User>> {
+        sqlx::query(
+            r#"
+            UPDATE users
+            SET password_hash = $2,
+                updated_at = NOW()
+            WHERE id = $1
+            "#,
+        )
+        .bind(user_id)
+        .bind(password_hash)
+        .execute(&self.pool)
+        .await?;
+
+        self.find_by_id(user_id).await
     }
 }
